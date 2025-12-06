@@ -6,7 +6,11 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+
 	"unsafe"
+	"bufio"
+	"syscall"
+
 	"pipelined.dev/audio/vst2"
 )
 
@@ -52,21 +56,15 @@ func openPluginGUI(plugin *vst2.Plugin) {
 	fmt.Println("⚠️ PlugEditOpen opcode が見つかりませんでした")
 }
 
-func main() {
-	if len(os.Args) < 2 {
-		log.Println("⚠️ 使用法: go run main.go <VST2 プラグインのパス>")
-		return
-	}
-
-	pluginPath := os.Args[1]
-	fmt.Printf("▶️ VST2 プラグインをロード中: %s\n", pluginPath)
+func loadPlagin(path string) (*vst2.VST, *vst2.Plugin, map[string]int,error) {
+	fmt.Printf("▶️ VST2 プラグインをロード中: %s\n", path)
 
 	// --- 1. ライブラリのロード (VST) ---
-	vst, err := vst2.Open(pluginPath)
+	vst, err := vst2.Open(path)
 	if err != nil {
 		log.Fatalf("❌ VSTライブラリのロードに失敗しました: %v", err)
+		return nil, nil,nil, err
 	}
-	defer vst.Close()
 
 	// --- 2. プラグインインスタンスの作成 (Plugin) ---
 	hostCallbackFunc := hostCallback
@@ -74,17 +72,18 @@ func main() {
 	if plugin == nil {
 		log.Fatalf("❌ プラグインインスタンスの作成に失敗しました（nil が返されました）")
 	}
-	defer plugin.Close()
 
 	// --- 3. 情報の取得 ---
 	name := vst.Name
 	numParams := plugin.NumParams()
+	var opcodes map[string]int = make(map[string]int)
 
 	// 実行時に opcode 名から plugGetVendorString の値を探して使う（モジュールを編集せずに取得するため）
 	vendor := "unknown"
 	found := false
 	for i := 0; i < 6000; i++ { // 十分大きな範囲を探索
-		if vst2.PluginOpcode(i).String() == "plugGetVendorString" {
+		opcodes[vst2.PluginOpcode(i).String()] = i
+		if (vst2.PluginOpcode(i).String() == "plugGetVendorString"||vst2.PluginOpcode(i).String() == "PlugGetVendorString") {
 			// バッファは 64 バイト程度あれば十分（ascii64 に相当）
 			println("getting vendor")
 			var buf [1024]byte
@@ -113,7 +112,23 @@ func main() {
 			fmt.Printf("  %d: %s\n", i, plugin.ParamName(i))
 		}
 	}
-		// --- GUI を開く（オプション: --gui フラグで） ---
+	return vst, plugin, opcodes, nil
+}
+
+func main() {
+	if len(os.Args) < 2 {
+		log.Println("⚠️ 使用法: go run main.go <VST2 プラグインのパス>")
+		return
+	}
+
+	pluginPath := os.Args[1]
+
+	vst, plugin,opcodes, err := loadPlagin(pluginPath)
+	_=err
+	
+	fmt.Println("利用可能な opcode 一覧:", opcodes)
+
+	// --- GUI を開く（オプション: --gui フラグで） ---
 	openGUI := false
 	if len(os.Args) >= 4 && os.Args[3] == "--gui" {
 		openGUI = true
@@ -134,10 +149,11 @@ func main() {
 		fmt.Printf("▶️ バンクをセットしました: %s (%d bytes)\n", bankPath, len(data))
 	}
 
-	// --- ベンダー名の取得（オプション: 以前提示した方法） ---
+	///待機
+	bufio.NewScanner(os.Stdin).Scan() 
 
-
-
+	defer vst.Close()
+	defer plugin.Close()
 
 	fmt.Println("プログラムを正常に終了します。")
 }
