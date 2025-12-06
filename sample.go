@@ -7,12 +7,21 @@ import (
 	"log"
 	"os"
 
-	"unsafe"
 	"bufio"
 	"syscall"
+	"unsafe"
 
 	"pipelined.dev/audio/vst2"
 )
+
+// getConsoleHWND returns HWND (uintptr) or 0 if unavailable.
+func getConsoleHWND() uintptr {
+	k32 := syscall.NewLazyDLL("kernel32.dll")
+	proc := k32.NewProc("GetConsoleWindow")
+	hwnd, _, _ := proc.Call()
+	println("hwnd :", hwnd)
+	return hwnd
+}
 
 // 改良版 hostCallback: よく使われる opcode に対して安全なデフォルトを返す
 func hostCallback(op vst2.HostOpcode, index int32, value int64, ptr unsafe.Pointer, opt float32) int64 {
@@ -46,24 +55,23 @@ func hostCallback(op vst2.HostOpcode, index int32, value int64, ptr unsafe.Point
 }
 
 // GUI を開く（簡易: 親 HWND = nil）
-func openPluginGUI(plugin *vst2.Plugin) {
-	for i := 0; i < 600; i++ {
-		if vst2.PluginOpcode(i).String() == "PlugEditOpen" || vst2.PluginOpcode(i).String() == "plugEditOpen" {
-			plugin.Dispatch(vst2.PluginOpcode(i), 0, 0, nil, 0)
-			return
-		}
-	}
-	fmt.Println("⚠️ PlugEditOpen opcode が見つかりませんでした")
+func openPluginGUI(plugin *vst2.Plugin, opcodes map[string]int, cHWND uintptr) {
+
+	plugin.Dispatch(vst2.PluginOpcode(opcodes["PlugEditOpen"]), 0, 0, unsafe.Pointer(cHWND), 0)
+	fmt.Println("✅ PlugEditOpen opcode を使って GUI 開要求を送信しました")
+	return
+
+	//fmt.Println("⚠️ PlugEditOpen opcode が見つかりませんでした")
 }
 
-func loadPlagin(path string) (*vst2.VST, *vst2.Plugin, map[string]int,error) {
+func loadPlagin(path string) (*vst2.VST, *vst2.Plugin, map[string]int, error) {
 	fmt.Printf("▶️ VST2 プラグインをロード中: %s\n", path)
 
 	// --- 1. ライブラリのロード (VST) ---
 	vst, err := vst2.Open(path)
 	if err != nil {
 		log.Fatalf("❌ VSTライブラリのロードに失敗しました: %v", err)
-		return nil, nil,nil, err
+		return nil, nil, nil, err
 	}
 
 	// --- 2. プラグインインスタンスの作成 (Plugin) ---
@@ -83,7 +91,7 @@ func loadPlagin(path string) (*vst2.VST, *vst2.Plugin, map[string]int,error) {
 	found := false
 	for i := 0; i < 6000; i++ { // 十分大きな範囲を探索
 		opcodes[vst2.PluginOpcode(i).String()] = i
-		if (vst2.PluginOpcode(i).String() == "plugGetVendorString"||vst2.PluginOpcode(i).String() == "PlugGetVendorString") {
+		if vst2.PluginOpcode(i).String() == "plugGetVendorString" || vst2.PluginOpcode(i).String() == "PlugGetVendorString" {
 			// バッファは 64 バイト程度あれば十分（ascii64 に相当）
 			println("getting vendor")
 			var buf [1024]byte
@@ -123,21 +131,23 @@ func main() {
 
 	pluginPath := os.Args[1]
 
-	vst, plugin,opcodes, err := loadPlagin(pluginPath)
-	_=err
-	
+	vst, plugin, opcodes, err := loadPlagin(pluginPath)
+	_ = err
+
 	fmt.Println("利用可能な opcode 一覧:", opcodes)
 
+	println(("openning GUI..."))
 	// --- GUI を開く（オプション: --gui フラグで） ---
 	openGUI := false
 	if len(os.Args) >= 4 && os.Args[3] == "--gui" {
 		openGUI = true
 	}
 	if openGUI {
-		openPluginGUI(plugin)
+		openPluginGUI(plugin, opcodes, getConsoleHWND())
 		fmt.Println("▶️ GUI 開要求を送信しました。プラグインがウィンドウを作るか確認してください。")
 	}
 
+	println("loading .fbx...")
 	// --- バンクファイルが指定されていれば読み込んでセットする ---
 	if len(os.Args) >= 3 && os.Args[2] != "" {
 		bankPath := os.Args[2]
@@ -149,8 +159,9 @@ func main() {
 		fmt.Printf("▶️ バンクをセットしました: %s (%d bytes)\n", bankPath, len(data))
 	}
 
+	println("zennrataiki")
 	///待機
-	bufio.NewScanner(os.Stdin).Scan() 
+	bufio.NewScanner(os.Stdin).Scan()
 
 	defer vst.Close()
 	defer plugin.Close()
