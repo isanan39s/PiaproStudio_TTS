@@ -264,17 +264,20 @@ func OpenPluginGUIWithWindow(plugin *vst2.Plugin, opcodes map[string]int) (chan 
 					uintptr(height),
 					SWP_NOMOVE|SWP_NOZORDER,
 				)
+				println("resizd")
 			}
 		} else {
 			fmt.Println("[GUI Thread] Warning: PlugEditGetRect returned a nil pointer.")
 		}
 
+		println("wait")
 		// Add a small delay to allow the system to settle, working around a potential race condition in the plugin.
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(500 * time.Millisecond)
 
 		parentPtr := unsafe.Pointer(uintptr(hwnd))
 		plugin.Dispatch(vst2.PluginOpcode(openCode), 0, 0, parentPtr, 0)
 		fmt.Println("▶️ PlugEditOpen dispatched (parent HWND passed)")
+
 
 		// メッセージループ（中で exec を処理する）
 		runMessageLoop(plugin, opcodes, exec)
