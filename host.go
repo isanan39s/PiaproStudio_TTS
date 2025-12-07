@@ -3,24 +3,28 @@ package main
 import (
 	"bytes"
 	"fmt"
-
 	"unsafe"
 
 	"pipelined.dev/audio/vst2"
 )
 
+// timeInfo: LMMSの実装を参考に、より詳細なパラメータを設定した最終バージョン
 var timeInfo = &vst2.TimeInfo{
-	SampleRate: 48000.0,
-	Tempo:      120.0,
+	SampleRate:         48000.0,
+	Tempo:              120.0,
+	PpqPos:             0.0, // Musical Position, in Quarter Note
+	TimeSigNumerator:   4,   // 4/4拍子
+	TimeSigDenominator: 4,
+	Flags:              vst2.TempoValid | vst2.PpqPosValid | vst2.TimeSigValid,
 }
 
 func HostCallback(op vst2.HostOpcode, index int32, value int64, ptr unsafe.Pointer, opt float32) int64 {
-	return hostCallback(op, index, value, ptr, opt)
+	return HostCallbackImpl(op, index, value, ptr, opt)
 }
 
-// デバッグ版 hostCallback: どの opcode でクラッシュするか特定用
-func hostCallback(op vst2.HostOpcode, index int32, value int64, ptr unsafe.Pointer, opt float32) int64 {
-	fmt.Printf("[hostCallback] opcode=%v (%d) index=%d value=%d ptr=%p opt=%f\n", op, op, index, value, ptr, opt)
+// HostCallbackImpl: LMMSの調査結果を反映した最終版
+func HostCallbackImpl(op vst2.HostOpcode, index int32, value int64, ptr unsafe.Pointer, opt float32) int64 {
+	// fmt.Printf("[hostCallback] opcode=%v (%d)\n", op, op)
 
 	switch op {
 	case vst2.HostGetVendorVersion:
@@ -32,13 +36,13 @@ func hostCallback(op vst2.HostOpcode, index int32, value int64, ptr unsafe.Point
 	case vst2.HostGetCurrentProcessLevel:
 		return int64(0)
 	case vst2.HostGetTime:
-		// To-Do: value引数でフィルタリングする
 		return int64(uintptr(unsafe.Pointer(timeInfo)))
 	case vst2.HostCanDo:
 		return 0
 	case vst2.HostOpcode(6): // hostWantMidi
-		// このホストは MIDI を受け付けることを知らせる (1 = yes)
-		return 1
+		return 1 // MIDIを受け付ける
+	case vst2.HostOpcode(29): // audioMasterNeedIdle / HostNeedIdle
+		return 1 // アイドル処理が必要であることを伝える
 	case vst2.HostGetVendorString, vst2.HostGetProductString:
 		return 0
 	case vst2.HostIdle:
@@ -46,11 +50,12 @@ func hostCallback(op vst2.HostOpcode, index int32, value int64, ptr unsafe.Point
 	case vst2.HostSizeWindow:
 		return 0
 	default:
-		fmt.Printf("[hostCallback] ⚠️ UNHANDLED opcode=%v (%d) INDEX=%d VALUE=%d PTR=%p OPT=%f -- returning 1\n", op, op, index, value, ptr, opt)
-		return 1
+		// fmt.Printf("[hostCallback] ⚠️ UNHANDLED opcode=%v (%d)\n", op, op)
+		return 0 // 不明なものは0を返すのが最も安全
 	}
 }
-func loadPlagin(path string) (*vst2.VST, *vst2.Plugin, map[string]int, error) {
+
+func LoadPlugin(path string) (*vst2.VST, *vst2.Plugin, map[string]int, error) {
 	fmt.Printf(" VST2 プラグインをロード中: %s\n", path)
 
 	vst, err := vst2.Open(path)
@@ -58,7 +63,7 @@ func loadPlagin(path string) (*vst2.VST, *vst2.Plugin, map[string]int, error) {
 		return nil, nil, nil, err
 	}
 
-	hostCallbackFunc := hostCallback
+	hostCallbackFunc := HostCallback
 	plugin := vst.Plugin(hostCallbackFunc)
 	if plugin == nil {
 		return nil, nil, nil, fmt.Errorf("plugin instance creation failed")
@@ -92,7 +97,7 @@ func loadPlagin(path string) (*vst2.VST, *vst2.Plugin, map[string]int, error) {
 		}
 	}
 
-	fmt.Println("   opcode :",opcodes)
+	fmt.Println("   opcode :", opcodes)
 
 	fmt.Println("---------------------------------------")
 	return vst, plugin, opcodes, nil

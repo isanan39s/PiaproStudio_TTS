@@ -36,9 +36,13 @@ const (
 	SW_SHOW             = 5
 	WM_DESTROY          = 0x0002
 	// 追加: PM_REMOVE
-	PM_REMOVE    = 0x0001
-	SWP_NOMOVE   = 0x0002
-	SWP_NOZORDER = 0x0004
+	PM_REMOVE       = 0x0001
+	SWP_NOMOVE      = 0x0002
+	SWP_NOZORDER    = 0x0004
+	WS_CAPTION      = 0x00C00000
+	WS_SYSMENU      = 0x00080000
+	WS_MINIMIZEBOX  = 0x00020000
+	WS_CLIPCHILDREN = 0x02000000
 )
 
 // ExecRequest は GUI スレッド上で実行したい関数を表すリクエスト。
@@ -123,7 +127,7 @@ func createWin32Window(title string) (uintptr, error) {
 		0,
 		uintptr(unsafe.Pointer(className)),
 		uintptr(unsafe.Pointer(titlePtr)),
-		uintptr(WS_OVERLAPPEDWINDOW),
+		uintptr(WS_OVERLAPPEDWINDOW|WS_CLIPCHILDREN),
 		0,
 		0,
 		800,
@@ -270,6 +274,12 @@ func OpenPluginGUIWithWindow(plugin *vst2.Plugin, opcodes map[string]int) (chan 
 			fmt.Println("[GUI Thread] Warning: PlugEditGetRect returned a nil pointer.")
 		}
 
+		// Bring editor window to top, as LMMS does.
+		if editTopCode, ok := opcodes["plugEditTop"]; ok {
+			fmt.Println("[GUI Thread] Bringing editor to top...")
+			plugin.Dispatch(vst2.PluginOpcode(editTopCode), 0, 0, nil, 0)
+		}
+
 		println("wait")
 		// Add a small delay to allow the system to settle, working around a potential race condition in the plugin.
 		time.Sleep(500 * time.Millisecond)
@@ -277,7 +287,6 @@ func OpenPluginGUIWithWindow(plugin *vst2.Plugin, opcodes map[string]int) (chan 
 		parentPtr := unsafe.Pointer(uintptr(hwnd))
 		plugin.Dispatch(vst2.PluginOpcode(openCode), 0, 0, parentPtr, 0)
 		fmt.Println("▶️ PlugEditOpen dispatched (parent HWND passed)")
-
 
 		// メッセージループ（中で exec を処理する）
 		runMessageLoop(plugin, opcodes, exec)
