@@ -1,119 +1,90 @@
-package main
+﻿package main
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
-
-	"bufio"
-	"syscall"
 	"unsafe"
 
 	"pipelined.dev/audio/vst2"
 )
 
-// getConsoleHWND returns HWND (uintptr) or 0 if unavailable.
-func getConsoleHWND() uintptr {
-	k32 := syscall.NewLazyDLL("kernel32.dll")
-	proc := k32.NewProc("GetConsoleWindow")
-	hwnd, _, _ := proc.Call()
-	println("hwnd :", hwnd)
-	return hwnd
+func HostCallback(op vst2.HostOpcode, index int32, value int64, ptr unsafe.Pointer, opt float32) int64 {
+	return hostCallback(op, index, value, ptr, opt)
 }
 
-// 改良版 hostCallback: よく使われる opcode に対して安全なデフォルトを返す
+// デバッグ版 hostCallback: どの opcode でクラッシュするか特定用
 func hostCallback(op vst2.HostOpcode, index int32, value int64, ptr unsafe.Pointer, opt float32) int64 {
+	fmt.Printf("[hostCallback] opcode=%v (%d) index=%d value=%d\n", op, op, index, value)
+
 	switch op {
 	case vst2.HostGetVendorVersion:
-		return 10 // ホストバージョン
+		return 10
 	case vst2.HostGetSampleRate:
-		// pluing がサンプルレートを要求したら 44100 を返す（適宜変更）
 		return int64(48000)
 	case vst2.HostGetBufferSize:
 		return int64(512)
 	case vst2.HostGetCurrentProcessLevel:
-		return int64(0) // safe default
+		return int64(0)
 	case vst2.HostGetTime:
-		// もし TimeInfo ポインタを期待するなら 0 を返す（プラグイン側で nil を扱えるか依存）
 		return 0
 	case vst2.HostCanDo:
-		// host の機能応答: 0 = unknown / -1 = no / 1 = yes (モジュール依存)
 		return 0
-	case vst2.HostGetVendorString:
-		// 文字列を期待される場合は何もしない（nilポインタ扱い）: 0
+	case vst2.HostOpcode(6): // hostWantMidi
+		// このホストは MIDI を受け付けることを知らせる (1 = yes)
 		return 0
-	case vst2.HostGetProductString:
-		// 文字列を期待される場合は何もしない（nilポインタ扱い）: 0
+	case vst2.HostGetVendorString, vst2.HostGetProductString:
+		return 0
+	case vst2.HostIdle:
+		return 0
+	case vst2.HostSizeWindow:
 		return 0
 	default:
-		// ログしておくとデバッグに便利
-		fmt.Printf("hostCallback: unhandled opcode=%v index=%d value=%d opt=%v ptr=%v\n", op, index, value, opt, ptr)
+		fmt.Printf("[hostCallback] ⚠️ UNHANDLED opcode=%v (%d)\n", op, op)
 		return 0
 	}
-}
-
-// GUI を開く（簡易: 親 HWND = nil）
-func openPluginGUI(plugin *vst2.Plugin, opcodes map[string]int, cHWND uintptr) {
-
-	plugin.Dispatch(vst2.PluginOpcode(opcodes["PlugEditOpen"]), 0, 0, unsafe.Pointer(cHWND), 0)
-	fmt.Println("✅ PlugEditOpen opcode を使って GUI 開要求を送信しました")
-	return
-
-	//fmt.Println("⚠️ PlugEditOpen opcode が見つかりませんでした")
 }
 
 func loadPlagin(path string) (*vst2.VST, *vst2.Plugin, map[string]int, error) {
-	fmt.Printf("▶️ VST2 プラグインをロード中: %s\n", path)
+	fmt.Printf(" VST2 プラグインをロード中: %s\n", path)
 
-	// --- 1. ライブラリのロード (VST) ---
 	vst, err := vst2.Open(path)
 	if err != nil {
-		log.Fatalf("❌ VSTライブラリのロードに失敗しました: %v", err)
 		return nil, nil, nil, err
 	}
 
-	// --- 2. プラグインインスタンスの作成 (Plugin) ---
 	hostCallbackFunc := hostCallback
-	plugin := vst.Plugin(hostCallbackFunc) // <- v0.11.0 の正しい呼び方
+	plugin := vst.Plugin(hostCallbackFunc)
 	if plugin == nil {
-		log.Fatalf("❌ プラグインインスタンスの作成に失敗しました（nil が返されました）")
+		return nil, nil, nil, fmt.Errorf("plugin instance creation failed")
 	}
 
-	// --- 3. 情報の取得 ---
 	name := vst.Name
 	numParams := plugin.NumParams()
 	var opcodes map[string]int = make(map[string]int)
 
-	// 実行時に opcode 名から plugGetVendorString の値を探して使う（モジュールを編集せずに取得するため）
+	// opcode マップ構築とベンダー取得
 	vendor := "unknown"
-	found := false
-	for i := 0; i < 6000; i++ { // 十分大きな範囲を探索
+	for i := 0; i < 6000; i++ {
 		opcodes[vst2.PluginOpcode(i).String()] = i
 		if vst2.PluginOpcode(i).String() == "plugGetVendorString" || vst2.PluginOpcode(i).String() == "PlugGetVendorString" {
-			// バッファは 64 バイト程度あれば十分（ascii64 に相当）
-			println("getting vendor")
 			var buf [1024]byte
 			plugin.Dispatch(vst2.PluginOpcode(i), 0, 0, unsafe.Pointer(&buf[0]), 0)
 			vendor = string(bytes.TrimRight(buf[:], "\x00"))
-			found = true
 			break
 		}
 	}
-	if !found {
-		// 探せなかったら既定値のまま
-		vendor = "unknown"
-	}
 
 	fmt.Println("---------------------------------------")
-	fmt.Printf("✅ ロード成功。プラグイン情報を取得しました:\n")
+	fmt.Printf(" ロード成功。プラグイン情報を取得しました:\n")
 	fmt.Printf("   プラグイン名: %s\n", name)
 	fmt.Printf("   ベンダー名: %s\n", vendor)
 	fmt.Printf("   パラメータ数: %d\n", numParams)
 	fmt.Println("---------------------------------------")
 
-	// パラメータ名の例表示（あれば）
 	if numParams > 0 {
 		fmt.Println("パラメータ一覧:")
 		for i := 0; i < numParams; i++ {
@@ -125,46 +96,70 @@ func loadPlagin(path string) (*vst2.VST, *vst2.Plugin, map[string]int, error) {
 
 func main() {
 	if len(os.Args) < 2 {
-		log.Println("⚠️ 使用法: go run main.go <VST2 プラグインのパス>")
+		log.Println(" 使用法: go run . <VST2 プラグインのパス> [bank.fxb] [--gui]")
 		return
 	}
 
 	pluginPath := os.Args[1]
 
 	vst, plugin, opcodes, err := loadPlagin(pluginPath)
-	_ = err
+	if err != nil {
+		log.Fatalf("failed to load plugin: %v", err)
+	}
+	defer vst.Close()
+	defer plugin.Close()
 
-	fmt.Println("利用可能な opcode 一覧:", opcodes)
-
-	println(("openning GUI..."))
-	// --- GUI を開く（オプション: --gui フラグで） ---
 	openGUI := false
-	if len(os.Args) >= 4 && os.Args[3] == "--gui" {
+	if len(os.Args) >= 3 && os.Args[len(os.Args)-1] == "--gui" {
 		openGUI = true
-	}
-	if openGUI {
-		openPluginGUI(plugin, opcodes, getConsoleHWND())
-		fmt.Println("▶️ GUI 開要求を送信しました。プラグインがウィンドウを作るか確認してください。")
+		println("gui enable")
 	}
 
-	println("loading .fbx...")
-	// --- バンクファイルが指定されていれば読み込んでセットする ---
-	if len(os.Args) >= 3 && os.Args[2] != "" {
+	var exec chan ExecRequest // GUI スレッド向けの実行チャネル（なければ nil）
+	if openGUI {
+		// win32.go の関数（OpenPluginGUIWithWindow）を呼ぶ（非ブロッキング）
+		fmt.Println("opengui")
+		done, e, err := OpenPluginGUIWithWindow(plugin, opcodes)
+		if err != nil {
+			log.Fatalf("failed to open plugin GUI: %v", err)
+		}
+		exec = e
+		_ = done // 必要なら <-done で待てます
+		fmt.Println("Plugin GUI started (non-blocking). Close the plugin window to finish; or press Enter to exit now.")
+	}
+
+	procSleep.Call(5000)
+
+	// バンクファイルが指定されていれば読み込み（--gui フラグと独立して処理）
+	if len(os.Args) >= 3 && os.Args[2] != "" && os.Args[2] != "--gui" {
 		bankPath := os.Args[2]
 		data, err := ioutil.ReadFile(bankPath)
 		if err != nil {
-			log.Fatalf("❌ バンクファイルの読み込みに失敗しました: %v", err)
+			log.Fatalf(" バンクファイルの読み込みに失敗しました: %v", err)
 		}
-		plugin.SetBankData(data)
-		fmt.Printf("▶️ バンクをセットしました: %s (%d bytes)\n", bankPath, len(data))
+
+		// GUI スレッド上で SetBankData を実行する
+		if exec != nil {
+			resp := make(chan error, 1)
+			exec <- ExecRequest{
+				Fn: func() error {
+					plugin.SetBankData(data)
+					return nil
+				},
+				Resp: resp,
+			}
+			if err := <-resp; err != nil {
+				log.Fatalf(" SetBankData failed: %v", err)
+			}
+			println(" バンクをセットしました:", bankPath, "size", len(data))
+		} else {
+			// exec が無ければ直接呼ぶ（GUI スレッドが存在しない場合）
+			plugin.SetBankData(data)
+			println(" バンクをセットしました(直接):", bankPath, "size", len(data))
+		}
 	}
 
-	println("zennrataiki")
-	///待機
 	bufio.NewScanner(os.Stdin).Scan()
-
-	defer vst.Close()
-	defer plugin.Close()
 
 	fmt.Println("プログラムを正常に終了します。")
 }

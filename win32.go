@@ -2,9 +2,8 @@ package main
 
 ///copilotくんが書いてくれました
 import (
-	"bufio"
 	"fmt"
-	"os"
+	"runtime"
 	"syscall"
 	"unsafe"
 
@@ -23,7 +22,8 @@ var (
 	procDispatchMessageW = user32.NewProc("DispatchMessageW")
 	procDefWindowProcW   = user32.NewProc("DefWindowProcW")
 	procPostQuitMessage  = user32.NewProc("PostQuitMessage")
-	procGetModuleHandleW = kernel32.NewProc("GetModuleHandleW")
+	procPeekMessageW     = user32.NewProc("PeekMessageW")
+	procSleep            = kernel32.NewProc("Sleep")
 )
 
 const (
@@ -32,7 +32,15 @@ const (
 	WS_OVERLAPPEDWINDOW = 0x00CF0000
 	SW_SHOW             = 5
 	WM_DESTROY          = 0x0002
+	PM_REMOVE           = 0x0001
 )
+
+// ExecRequest は GUI スレッド上で実行したい関数を表すリクエスト。
+// 呼び出し側は Resp チャネルで完了／エラーを受け取る。
+type ExecRequest struct {
+	Fn   func() error
+	Resp chan error
+}
 
 type WNDCLASSEX struct {
 	CbSize        uint32
@@ -58,8 +66,9 @@ type MSG struct {
 	Pt      struct{ X, Y int32 }
 }
 
+// 修正版: getModuleHandle
 func getModuleHandle() uintptr {
-	h, _, _ := procGetModuleHandleW.Call(0)
+	h, _, _ := kernel32.NewProc("GetModuleHandleW").Call(0)
 	return h
 }
 
@@ -103,10 +112,13 @@ func createWin32Window(title string) (uintptr, error) {
 		uintptr(unsafe.Pointer(className)),
 		uintptr(unsafe.Pointer(titlePtr)),
 		uintptr(WS_OVERLAPPEDWINDOW),
-		100, 100, 800, 600,
+		100,
+		100,
+		800,
+		600,
 		0,
 		0,
-		uintptr(getModuleHandle()),
+		getModuleHandle(),
 		0,
 	)
 	if h == 0 {
@@ -119,50 +131,112 @@ func createWin32Window(title string) (uintptr, error) {
 	return h, nil
 }
 
-func runMessageLoop(done chan struct{}) {
+// runMessageLoop はメッセージを処理しつつ、exec チャネル経由で
+// GUI スレッド上で実行すべき関数を受け取り実行する。
+// done がクローズされるとループを抜ける。
+func runMessageLoop(done chan struct{}, exec chan ExecRequest) {
 	var msg MSG
 	for {
-		ret, _, _ := procGetMessageW.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0)
-		if int32(ret) == -1 || ret == 0 {
-			break
+		// メッセージ処理（ノンブロッキング）
+		ret, _, _ := procPeekMessageW.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0, PM_REMOVE)
+		if ret > 0 {
+			if msg.Message == 0x0012 { // WM_QUIT
+				break
+			}
+			procTranslateMessage.Call(uintptr(unsafe.Pointer(&msg)))
+			procDispatchMessageW.Call(uintptr(unsafe.Pointer(&msg)))
+		} else {
+			// メッセージがないときは短くスリープ
+			procSleep.Call(10)
 		}
-		procTranslateMessage.Call(uintptr(unsafe.Pointer(&msg)))
-		procDispatchMessageW.Call(uintptr(unsafe.Pointer(&msg)))
+
+		// exec チャネルにリクエストがあれば処理する（非ブロッキング）
+		select {
+		case req, ok := <-exec:
+			if !ok {
+				// exec が閉じられたら終了検討（ただし done を優先）
+				// 続行して done を待つ
+			} else {
+				// 実行して結果を返す（nil は成功）
+				var err error
+				// 防御的に recover でパニックを捕まえる
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							err = fmt.Errorf("exec panic: %v", r)
+						}
+					}()
+					err = req.Fn()
+				}()
+				// 送信側がいつまでも待たないようバッファなしでも送れる保障はできないので非ブロックに返す
+				select {
+				case req.Resp <- err:
+				default:
+				}
+			}
+		default:
+			// 何もしない
+		}
+
+		// done チェック（優先）
+		select {
+		case <-done:
+			// 終了要求
+			return
+		default:
+		}
 	}
-	close(done)
 }
 
-// OpenPluginGUIWithWindow creates a Win32 window, opens the plugin editor with that window as parent,
-// runs a message loop in a goroutine, waits for Enter on stdin, then closes the editor.
-func OpenPluginGUIWithWindow(plugin *vst2.Plugin, opcodes map[string]int) error {
+// OpenPluginGUIWithWindow は即座に (done, exec, nil) を返し、GUI スレッド
+// はバックグラウンドで動作する。exec に ExecRequest を送ると GUI スレッド上で実行される。
+func OpenPluginGUIWithWindow(plugin *vst2.Plugin, opcodes map[string]int) (chan struct{}, chan ExecRequest, error) {
 	openCode, ok := opcodes["PlugEditOpen"]
 	if !ok {
-		return fmt.Errorf("PlugEditOpen opcode not found")
+		return nil, nil, fmt.Errorf("PlugEditOpen opcode not found")
 	}
 	closeCode, _ := opcodes["PlugEditClose"]
 
-	hwnd, err := createWin32Window("VST Plugin Host Window")
-	if err != nil {
-		return fmt.Errorf("create window failed: %w", err)
-	}
-	fmt.Println("created window hwnd:", hwnd)
-
 	done := make(chan struct{})
-	go runMessageLoop(done)
+	exec := make(chan ExecRequest)
 
-	// call PlugEditOpen with parent HWND
-	parentPtr := unsafe.Pointer(uintptr(hwnd))
-	plugin.Dispatch(vst2.PluginOpcode(openCode), 0, 0, parentPtr, 0)
-	fmt.Println(" PlugEditOpen dispatched (parent HWND passed)")
+	// GUI スレッドを立てる
+	go func() {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
 
-	fmt.Println("Press Enter to close editor...")
-	bufio.NewScanner(os.Stdin).Scan()
+		hwnd, err := createWin32Window("VST Plugin Host Window")
+		if err != nil {
+			fmt.Printf("create window failed: %v\n", err)
+			// 起動失敗ならチャネルを閉じて終了
+			close(done)
+			close(exec)
+			return
+		}
+		fmt.Println("created window hwnd:", hwnd)
 
-	// close editor if opcode exists
-	if closeCode != 0 {
-		plugin.Dispatch(vst2.PluginOpcode(closeCode), 0, 0, nil, 0)
-	}
-	// Wait for message loop to end (window may be destroyed via wndProc)
-	<-done
-	return nil
+		plugin.Start()
+		plugin.Resume()
+
+		parentPtr := unsafe.Pointer(uintptr(hwnd))
+		fmt.Println("▶️ PlugEditOpen dispatch ")
+
+		plugin.Dispatch(vst2.PluginOpcode(openCode), 0, 0, parentPtr, 0)
+		fmt.Println("▶️ PlugEditOpen dispatched (parent HWND passed)")
+
+		// メッセージループ（中で exec を処理する）
+		runMessageLoop(done, exec)
+
+		// GUI 終了処理（done が閉じられたらここにくる）
+		plugin.Suspend()
+		if closeCode != 0 {
+			plugin.Dispatch(vst2.PluginOpcode(closeCode), 0, 0, nil, 0)
+		}
+
+		// exec を閉じる（送信側に通知）
+		close(exec)
+		// done は呼び出し側／送信用に既にクローズされている想定
+	}()
+
+	return done, exec, nil
 }
