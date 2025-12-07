@@ -1,35 +1,103 @@
 ﻿package main
 
 import (
-	"bufio"
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
-	"runtime/trace"
-	"time"
+	"unsafe"
+
+	"pipelined.dev/audio/vst2"
 )
 
-func main() {
-	f, err := os.Create("trace.out")
+// デバッグ版 hostCallback: どの opcode でクラッシュするか特定用
+func hostCallback(op vst2.HostOpcode, index int32, value int64, ptr unsafe.Pointer, opt float32) int64 {
+	fmt.Printf("[hostCallback] opcode=%v (%d) index=%d value=%d\n", op, op, index, value)
+
+	switch op {
+	case vst2.HostGetVendorVersion:
+		return 10
+	case vst2.HostGetSampleRate:
+		return int64(48000)
+	case vst2.HostGetBufferSize:
+		return int64(512)
+	case vst2.HostGetCurrentProcessLevel:
+		return int64(0)
+	case vst2.HostGetTime:
+		return 0
+	case vst2.HostCanDo:
+		return 0
+	case vst2.HostOpcode(6): // hostWantMidi (opcode 6)
+		return 1
+	case vst2.HostGetVendorString, vst2.HostGetProductString:
+		return 0
+	case vst2.HostIdle:
+		return 0
+	case vst2.HostSizeWindow:
+		return 0
+	default:
+		// デバッグ: 予期しない opcode をログ出力
+		fmt.Printf("[hostCallback] ⚠️ UNHANDLED opcode=%v (%d)\n", op, op)
+		return 0
+	}
+}
+
+func loadPlagin(path string) (*vst2.VST, *vst2.Plugin, map[string]int, error) {
+	fmt.Printf(" VST2 プラグインをロード中: %s\n", path)
+
+	vst, err := vst2.Open(path)
 	if err != nil {
-		log.Fatalf("failed to create trace output file: %v", err)
-	}
-	defer f.Close()
-
-	if err := trace.Start(f); err != nil {
-		log.Fatalf("failed to start trace: %v", err)
-	}
-	defer trace.Stop()
-
-	var pluginPath string
-	pluginPath = os.Args[1]
-	if len(os.Args) < 2 || os.Args[1] == "--gui" {
-		pluginPath = "c:\\Program Files\\Vstplugins\\Piapro Studio VSTi.dll" // デフォルトのプラグインパス
+		return nil, nil, nil, err
 	}
 
-	// Load the plugin using the exported function from host.go
-	vst, plugin, opcodes, err := LoadPlugin(pluginPath) // Renamed from loadPlagin to LoadPlugin
+	hostCallbackFunc := hostCallback
+	plugin := vst.Plugin(hostCallbackFunc)
+	if plugin == nil {
+		return nil, nil, nil, fmt.Errorf("plugin instance creation failed")
+	}
+
+	name := vst.Name
+	numParams := plugin.NumParams()
+	var opcodes map[string]int = make(map[string]int)
+
+	// opcode マップ構築とベンダー取得
+	vendor := "unknown"
+	for i := 0; i < 6000; i++ {
+		opcodes[vst2.PluginOpcode(i).String()] = i
+		if vst2.PluginOpcode(i).String() == "plugGetVendorString" || vst2.PluginOpcode(i).String() == "PlugGetVendorString" {
+			var buf [1024]byte
+			plugin.Dispatch(vst2.PluginOpcode(i), 0, 0, unsafe.Pointer(&buf[0]), 0)
+			vendor = string(bytes.TrimRight(buf[:], "\x00"))
+			break
+		}
+	}
+
+	fmt.Println("---------------------------------------")
+	fmt.Printf(" ロード成功。プラグイン情報を取得しました:\n")
+	fmt.Printf("   プラグイン名: %s\n", name)
+	fmt.Printf("   ベンダー名: %s\n", vendor)
+	fmt.Printf("   パラメータ数: %d\n", numParams)
+	fmt.Println("---------------------------------------")
+
+	if numParams > 0 {
+		fmt.Println("パラメータ一覧:")
+		for i := 0; i < numParams; i++ {
+			fmt.Printf("  %d: %s\n", i, plugin.ParamName(i))
+		}
+	}
+	return vst, plugin, opcodes, nil
+}
+
+func main() {
+	if len(os.Args) < 2 {
+		log.Println(" 使用法: go run . <VST2 プラグインのパス> [bank.fxb] [--gui]")
+		return
+	}
+
+	pluginPath := os.Args[1]
+
+	vst, plugin, opcodes, err := loadPlagin(pluginPath)
 	if err != nil {
 		log.Fatalf("failed to load plugin: %v", err)
 	}
@@ -37,54 +105,31 @@ func main() {
 	defer plugin.Close()
 
 	openGUI := false
-	if  os.Args[len(os.Args)-1] == "--gui" {
+	if len(os.Args) >= 3 && os.Args[len(os.Args)-1] == "--gui" {
 		openGUI = true
-		println("gui enable")
 	}
 
-	var exec chan ExecRequest // GUI スレッド向けの実行チャネル
-	if openGUI {
-		fmt.Println("opengui")
-		e, err := OpenPluginGUIWithWindow(plugin, opcodes)
-		if err != nil {
-			log.Fatalf("failed to open plugin GUI: %v", err)
-		}
-		exec = e
-		fmt.Println("Plugin GUI started (non-blocking). Close the plugin window to finish.")
-	}
-
-	// Wait a bit to allow GUI to initialize, then process bank data
-	time.Sleep(1 * time.Second) // Moved from 5 seconds to 1 second
-
+	// バンクファイルが指定されていれば読み込み（--gui フラグと独立して処理）
 	if len(os.Args) >= 3 && os.Args[2] != "" && os.Args[2] != "--gui" {
+		println("setting .fbx")
 		bankPath := os.Args[2]
 		data, err := ioutil.ReadFile(bankPath)
 		if err != nil {
 			log.Fatalf(" バンクファイルの読み込みに失敗しました: %v", err)
 		}
 
-		if exec != nil {
-			resp := make(chan error, 1)
-			req := ExecRequest{
-				Fn: func() error {
-					plugin.SetBankData(data)
-					return nil
-				},
-				Resp: resp,
-			}
-			exec <- req
-			if err := <-resp; err != nil {
-				log.Fatalf(" SetBankData failed: %v", err)
-			}
-			println(" バンクをセットしました:", bankPath, "size", len(data))
-		} else {
-			plugin.SetBankData(data)
-			println(" バンクをセットしました(直接):", bankPath, "size", len(data))
-		}
+		// バンクをセットする前に plugin を開始する
+		plugin.Start()
+		plugin.SetBankData(data)
+		println(" バンクをセットしました:", bankPath, "size", len(data))
 	}
 
-	fmt.Println("Press Enter to exit...")
-	bufio.NewScanner(os.Stdin).Scan()
+	if openGUI {
+		// win32.go の関数（OpenPluginGUIWithWindow）を呼ぶ
+		if err := OpenPluginGUIWithWindow(plugin, opcodes); err != nil {
+			log.Fatalf("failed to open plugin GUI: %v", err)
+		}
+	}
 
 	fmt.Println("プログラムを正常に終了します。")
 }

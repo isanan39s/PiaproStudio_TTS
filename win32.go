@@ -1,11 +1,8 @@
-package main
+﻿package main
 
-///copilotくんが書いてくれました
 import (
 	"fmt"
-	"runtime"
 	"syscall"
-	"time"
 	"unsafe"
 
 	"pipelined.dev/audio/vst2"
@@ -23,10 +20,9 @@ var (
 	procDispatchMessageW = user32.NewProc("DispatchMessageW")
 	procDefWindowProcW   = user32.NewProc("DefWindowProcW")
 	procPostQuitMessage  = user32.NewProc("PostQuitMessage")
-	// 追加: PeekMessageW と Sleep
-	procPeekMessageW = user32.NewProc("PeekMessageW")
-	procSleep        = kernel32.NewProc("Sleep")
-	procSetWindowPos = user32.NewProc("SetWindowPos")
+	procGetModuleHandleW = kernel32.NewProc("GetModuleHandleW")
+	procPeekMessageW     = user32.NewProc("PeekMessageW")
+	procSleep            = kernel32.NewProc("Sleep")
 )
 
 const (
@@ -35,22 +31,8 @@ const (
 	WS_OVERLAPPEDWINDOW = 0x00CF0000
 	SW_SHOW             = 5
 	WM_DESTROY          = 0x0002
-	// 追加: PM_REMOVE
-	PM_REMOVE       = 0x0001
-	SWP_NOMOVE      = 0x0002
-	SWP_NOZORDER    = 0x0004
-	WS_CAPTION      = 0x00C00000
-	WS_SYSMENU      = 0x00080000
-	WS_MINIMIZEBOX  = 0x00020000
-	WS_CLIPCHILDREN = 0x02000000
+	PM_REMOVE           = 0x0001
 )
-
-// ExecRequest は GUI スレッド上で実行したい関数を表すリクエスト。
-// 呼び出し側は Resp チャネルで完了／エラーを受け取る。
-type ExecRequest struct {
-	Fn   func() error
-	Resp chan error
-}
 
 type WNDCLASSEX struct {
 	CbSize        uint32
@@ -76,14 +58,10 @@ type MSG struct {
 	Pt      struct{ X, Y int32 }
 }
 
-type ERect struct {
-	Top    int16
-	Left   int16
-	Bottom int16
-	Right  int16
-}
-
+// 修正版: getModuleHandle
 func getModuleHandle() uintptr {
+	// kernel32.GetModuleHandleW(NULL) を呼ぶ
+	// NULL を渡すとカレント実行ファイルのハンドルが返される
 	h, _, _ := kernel32.NewProc("GetModuleHandleW").Call(0)
 	return h
 }
@@ -99,6 +77,7 @@ func wndProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 	}
 }
 
+// createWin32Window 内の CreateWindowExW 呼び出し部分を修正
 func createWin32Window(title string) (uintptr, error) {
 	className, _ := syscall.UTF16PtrFromString("GoVSTHostClass")
 	titlePtr, _ := syscall.UTF16PtrFromString(title)
@@ -123,19 +102,20 @@ func createWin32Window(title string) (uintptr, error) {
 		return 0, fmt.Errorf("RegisterClassExW failed: %v", err)
 	}
 
+	// CreateWindowExW: (exStyle, className, windowName, style, x, y, width, height, parent, menu, instance, param)
 	h, _, err := procCreateWindowExW.Call(
-		0,
-		uintptr(unsafe.Pointer(className)),
-		uintptr(unsafe.Pointer(titlePtr)),
-		uintptr(WS_OVERLAPPEDWINDOW|WS_CLIPCHILDREN),
-		0,
-		0,
-		800,
-		600,
-		0,
-		0,
-		getModuleHandle(),
-		0,
+		0,                                  // exStyle
+		uintptr(unsafe.Pointer(className)), // className (LPCWSTR)
+		uintptr(unsafe.Pointer(titlePtr)),  // windowName (LPCWSTR)
+		uintptr(WS_OVERLAPPEDWINDOW),       // style
+		100,                                // x
+		100,                                // y
+		800,                                // width
+		600,                                // height
+		0,                                  // parent HWND (NULL = top-level)
+		0,                                  // menu (NULL)
+		getModuleHandle(),                  // hInstance
+		0,                                  // lpParam (NULL)
 	)
 	if h == 0 {
 		return 0, fmt.Errorf("CreateWindowExW failed: %v", err)
@@ -147,159 +127,73 @@ func createWin32Window(title string) (uintptr, error) {
 	return h, nil
 }
 
-// runMessageLoop はメッセージを処理しつつ、exec チャネル経由で
-// GUI スレッド上で実行すべき関数を受け取り実行する。
-func runMessageLoop(plugin *vst2.Plugin, opcodes map[string]int, exec chan ExecRequest) {
+func runMessageLoop(done chan struct{}) {
 	var msg MSG
-	idleCode, hasIdle := opcodes["PlugEditIdle"] // オペコードをループの前に一度取得
-
 	for {
-		// メッセージ処理（ノンブロッキング）
+		// PeekMessage: ノンブロッキングでメッセージをチェック
 		ret, _, _ := procPeekMessageW.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0, PM_REMOVE)
+
 		if ret > 0 {
+			// メッセージがあれば処理
 			if msg.Message == 0x0012 { // WM_QUIT
 				break
 			}
 			procTranslateMessage.Call(uintptr(unsafe.Pointer(&msg)))
 			procDispatchMessageW.Call(uintptr(unsafe.Pointer(&msg)))
 		} else {
-			// メッセージがないときは exec リクエストをチェックするか、アイドル処理
-			select {
-			case req, ok := <-exec:
-				if !ok {
-					// exec が閉じられたらループを抜ける
-					return
-				}
-				var err error
-				func() { // recover でパニックを捕まえる
-					defer func() {
-						if r := recover(); r != nil {
-							err = fmt.Errorf("exec panic: %v", r)
-						}
-					}()
-					err = req.Fn()
-				}()
-				select {
-				case req.Resp <- err:
-				default:
-				}
-			default:
-				// メッセージも exec リクエストもなければ、プラグインをアイドル状態にしてスリープ
-				if hasIdle {
-					plugin.Dispatch(vst2.PluginOpcode(idleCode), 0, 0, nil, 0)
-				}
-				procSleep.Call(10)
-			}
+			// メッセージがなければ少し待機（CPU 負荷軽減）
+			procSleep.Call(10)
+		}
+
+		// done チャネルがクローズされたかチェック
+		select {
+		case <-done:
+			return
+		default:
 		}
 	}
+	close(done)
 }
 
-// OpenPluginGUIWithWindow は即座に (exec, nil) を返し、GUI スレッド
-// はバックグラウンドで動作する。exec に ExecRequest を送ると GUI スレッド上で実行される。
-func OpenPluginGUIWithWindow(plugin *vst2.Plugin, opcodes map[string]int) (chan ExecRequest, error) {
+// OpenPluginGUIWithWindow creates a Win32 window, opens the plugin editor with that window as parent,
+// runs a message loop in a goroutine, waits for Enter on stdin, then closes the editor.
+func OpenPluginGUIWithWindow(plugin *vst2.Plugin, opcodes map[string]int) error {
 	openCode, ok := opcodes["PlugEditOpen"]
 	if !ok {
-		return nil, fmt.Errorf("PlugEditOpen opcode not found")
+		return fmt.Errorf("PlugEditOpen opcode not found")
 	}
 	closeCode, _ := opcodes["PlugEditClose"]
 
-	exec := make(chan ExecRequest)
+	fmt.Println("create window")
+	hwnd, err := createWin32Window("VST Plugin Host Window")
+	if err != nil {
+		return fmt.Errorf("create window failed: %w", err)
+	}
+	fmt.Println("created window hwnd:", hwnd)
 
-	// GUI スレッドを立てる
-	go func() {
-		runtime.LockOSThread()
-		defer runtime.UnlockOSThread()
+	// プラグインを実行状態にする（GUI 開く前に必須）
+	plugin.Start()
+	plugin.Resume()
 
-		hwnd, err := createWin32Window("VST Plugin Host Window")
-		if err != nil {
-			fmt.Printf("create window failed: %v\n", err)
-			// 起動失敗ならチャネルを閉じて終了
-			close(exec)
-			return
-		}
-		fmt.Println("created window hwnd:", hwnd)
+	// call PlugEditOpen with parent HWND
+	parentPtr := unsafe.Pointer(uintptr(hwnd))
+	fmt.Println("open window")
+	plugin.Dispatch(vst2.PluginOpcode(openCode), 0, 0, parentPtr, 0)
+	fmt.Println(" PlugEditOpen dispatched (parent HWND passed)")
+	fmt.Println("Close the window to exit...")
 
-		plugin.Start()
-		plugin.Resume()
+	done := make(chan struct{})
 
-		// Set audio settings before getting rect
-		if sampleRateCode, ok := opcodes["plugSetSampleRate"]; ok {
-			fmt.Println("[GUI Thread] Setting sample rate to 48000")
-			plugin.Dispatch(vst2.PluginOpcode(sampleRateCode), 0, 0, nil, float32(48000.0))
-		}
-		if blockSizeCode, ok := opcodes["plugSetBufferSize"]; ok {
-			fmt.Println("[GUI Thread] Setting block size to 512")
-			plugin.Dispatch(vst2.PluginOpcode(blockSizeCode), 0, 512, nil, 0)
-		}
-		if speakerCode, ok := opcodes["plugSetSpeakerArrangement"]; ok {
-			fmt.Println("[GUI Thread] Setting speaker arrangement to stereo")
-			stereoIn := vst2.SpeakerArrangement{
-				NumChannels: 2,
-				Type:        3, // kStereo
-			}
-			stereoOut := vst2.SpeakerArrangement{
-				NumChannels: 2,
-				Type:        3, // kStereo
-			}
-			plugin.Dispatch(vst2.PluginOpcode(speakerCode), 0, int64(uintptr(unsafe.Pointer(&stereoIn))), unsafe.Pointer(&stereoOut), 0)
-		}
+	// メッセージループを実行（ウィンドウ破棄で終了）
+	runMessageLoop(done)
 
-		// Get the plugin's editor rectangle before opening it
-		var rectPtr *ERect // ERectへのポインタを保持する変数を宣言
-		fmt.Println("[GUI Thread] Getting editor rect (expecting ERect**)...")
-		// rectPtrのアドレスを渡すことで、ERect**として渡す
-		plugin.Dispatch(vst2.PluginOpcode(13), 0, 0, unsafe.Pointer(&rectPtr), 0)
+	// Suspend and close
+	plugin.Suspend()
 
-		if rectPtr != nil {
-			rect := *rectPtr // ポインタをデリファレンスして実体を取得
-			fmt.Printf("[GUI Thread] Plugin editor rect: %+v\n", rect)
+	// close editor if opcode exists
+	if closeCode != 0 {
+		plugin.Dispatch(vst2.PluginOpcode(closeCode), 0, 0, nil, 0)
+	}
 
-			// ウィンドウのサイズをプラグインが要求したものに変更
-			width := rect.Right - rect.Left
-			height := rect.Bottom - rect.Top
-			if width > 0 && height > 0 {
-				fmt.Printf("[GUI Thread] Resizing window to %d x %d\n", width, height)
-				procSetWindowPos.Call(
-					hwnd,
-					0, // Zオーダーは変更しない
-					0, // x
-					0, // y
-					uintptr(width),
-					uintptr(height),
-					SWP_NOMOVE|SWP_NOZORDER,
-				)
-				println("resizd")
-			}
-		} else {
-			fmt.Println("[GUI Thread] Warning: PlugEditGetRect returned a nil pointer.")
-		}
-
-		// Bring editor window to top, as LMMS does.
-		if editTopCode, ok := opcodes["plugEditTop"]; ok {
-			fmt.Println("[GUI Thread] Bringing editor to top...")
-			plugin.Dispatch(vst2.PluginOpcode(editTopCode), 0, 0, nil, 0)
-		}
-
-		println("wait")
-		// Add a small delay to allow the system to settle, working around a potential race condition in the plugin.
-		time.Sleep(500 * time.Millisecond)
-
-		parentPtr := unsafe.Pointer(uintptr(hwnd))
-		plugin.Dispatch(vst2.PluginOpcode(openCode), 0, 0, parentPtr, 0)
-		fmt.Println("▶️ PlugEditOpen dispatched (parent HWND passed)")
-
-		// メッセージループ（中で exec を処理する）
-		runMessageLoop(plugin, opcodes, exec)
-
-		// GUI 終了処理
-		plugin.Suspend()
-		if closeCode != 0 {
-			plugin.Dispatch(vst2.PluginOpcode(closeCode), 0, 0, nil, 0)
-		}
-
-		// exec を閉じる（送信側に通知）
-		close(exec)
-	}()
-
-	return exec, nil
+	return nil
 }
