@@ -12,13 +12,18 @@ import (
 	"pipelined.dev/audio/vst2"
 )
 
+var timeInfo = &vst2.TimeInfo{
+	SampleRate: 48000.0,
+	Tempo:      120.0,
+}
+
 func HostCallback(op vst2.HostOpcode, index int32, value int64, ptr unsafe.Pointer, opt float32) int64 {
 	return hostCallback(op, index, value, ptr, opt)
 }
 
 // デバッグ版 hostCallback: どの opcode でクラッシュするか特定用
 func hostCallback(op vst2.HostOpcode, index int32, value int64, ptr unsafe.Pointer, opt float32) int64 {
-	fmt.Printf("[hostCallback] opcode=%v (%d) index=%d value=%d\n", op, op, index, value)
+	fmt.Printf("[hostCallback] opcode=%v (%d) index=%d value=%d ptr=%p opt=%f\n", op, op, index, value, ptr, opt)
 
 	switch op {
 	case vst2.HostGetVendorVersion:
@@ -30,12 +35,13 @@ func hostCallback(op vst2.HostOpcode, index int32, value int64, ptr unsafe.Point
 	case vst2.HostGetCurrentProcessLevel:
 		return int64(0)
 	case vst2.HostGetTime:
-		return 0
+		// To-Do: value引数でフィルタリングする
+		return int64(uintptr(unsafe.Pointer(timeInfo)))
 	case vst2.HostCanDo:
 		return 0
 	case vst2.HostOpcode(6): // hostWantMidi
 		// このホストは MIDI を受け付けることを知らせる (1 = yes)
-		return 0
+		return 1
 	case vst2.HostGetVendorString, vst2.HostGetProductString:
 		return 0
 	case vst2.HostIdle:
@@ -43,11 +49,10 @@ func hostCallback(op vst2.HostOpcode, index int32, value int64, ptr unsafe.Point
 	case vst2.HostSizeWindow:
 		return 0
 	default:
-		fmt.Printf("[hostCallback] ⚠️ UNHANDLED opcode=%v (%d)\n", op, op)
-		return 0
+		fmt.Printf("[hostCallback] ⚠️ UNHANDLED opcode=%v (%d) INDEX=%d VALUE=%d PTR=%p OPT=%f -- returning 1\n", op, op, index, value, ptr, opt)
+		return 1
 	}
 }
-
 func loadPlagin(path string) (*vst2.VST, *vst2.Plugin, map[string]int, error) {
 	fmt.Printf(" VST2 プラグインをロード中: %s\n", path)
 
@@ -83,6 +88,7 @@ func loadPlagin(path string) (*vst2.VST, *vst2.Plugin, map[string]int, error) {
 	fmt.Printf("   プラグイン名: %s\n", name)
 	fmt.Printf("   ベンダー名: %s\n", vendor)
 	fmt.Printf("   パラメータ数: %d\n", numParams)
+
 	fmt.Println("---------------------------------------")
 
 	if numParams > 0 {
@@ -119,7 +125,7 @@ func main() {
 	if openGUI {
 		// win32.go の関数（OpenPluginGUIWithWindow）を呼ぶ（非ブロッキング）
 		fmt.Println("opengui")
-		done, e, err := OpenPluginGUIWithWindow(plugin, opcodes)
+		done,  err := OpenPluginGUIWithWindow(plugin, opcodes)
 		if err != nil {
 			log.Fatalf("failed to open plugin GUI: %v", err)
 		}

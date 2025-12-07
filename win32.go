@@ -3,9 +3,9 @@ package main
 ///copilotくんが書いてくれました
 import (
 	"fmt"
-	"runtime"
-	"syscall"
-	"unsafe"
+	runtime "runtime"
+	syscall "syscall"
+	unsafe "unsafe"
 
 	"pipelined.dev/audio/vst2"
 )
@@ -22,6 +22,7 @@ var (
 	procDispatchMessageW = user32.NewProc("DispatchMessageW")
 	procDefWindowProcW   = user32.NewProc("DefWindowProcW")
 	procPostQuitMessage  = user32.NewProc("PostQuitMessage")
+	// 追加: PeekMessageW と Sleep
 	procPeekMessageW     = user32.NewProc("PeekMessageW")
 	procSleep            = kernel32.NewProc("Sleep")
 )
@@ -32,6 +33,7 @@ const (
 	WS_OVERLAPPEDWINDOW = 0x00CF0000
 	SW_SHOW             = 5
 	WM_DESTROY          = 0x0002
+	// 追加: PM_REMOVE
 	PM_REMOVE           = 0x0001
 )
 
@@ -66,7 +68,6 @@ type MSG struct {
 	Pt      struct{ X, Y int32 }
 }
 
-// 修正版: getModuleHandle
 func getModuleHandle() uintptr {
 	h, _, _ := kernel32.NewProc("GetModuleHandleW").Call(0)
 	return h
@@ -133,8 +134,7 @@ func createWin32Window(title string) (uintptr, error) {
 
 // runMessageLoop はメッセージを処理しつつ、exec チャネル経由で
 // GUI スレッド上で実行すべき関数を受け取り実行する。
-// done がクローズされるとループを抜ける。
-func runMessageLoop(done chan struct{}, exec chan ExecRequest) {
+func runMessageLoop(exec chan ExecRequest) {
 	var msg MSG
 	for {
 		// メッセージ処理（ノンブロッキング）
@@ -146,58 +146,46 @@ func runMessageLoop(done chan struct{}, exec chan ExecRequest) {
 			procTranslateMessage.Call(uintptr(unsafe.Pointer(&msg)))
 			procDispatchMessageW.Call(uintptr(unsafe.Pointer(&msg)))
 		} else {
-			// メッセージがないときは短くスリープ
-			procSleep.Call(10)
-		}
-
-		// exec チャネルにリクエストがあれば処理する（非ブロッキング）
-		select {
-		case req, ok := <-exec:
-			if !ok {
-				// exec が閉じられたら終了検討（ただし done を優先）
-				// 続行して done を待つ
-			} else {
+			// exec チャネルにリクエストがあれば処理する（非ブロッキング）
+			select {
+			case req, ok := <-exec:
+				if !ok {
+					// exec が閉じられたらループを抜ける
+					return
+				}
 				// 実行して結果を返す（nil は成功）
 				var err error
 				// 防御的に recover でパニックを捕まえる
-				func() {
-					defer func() {
-						if r := recover(); r != nil {
-							err = fmt.Errorf("exec panic: %v", r)
-						}
-					}()
-					err = req.Fn()
-				}()
+				// func() {
+				// 	defer func() {
+				// 		if r := recover(); r != nil {
+				// 			err = fmt.Errorf("exec panic: %v", r)
+				// 		}
+				// 	}()
+				// 	err = req.Fn()
+				// }
 				// 送信側がいつまでも待たないようバッファなしでも送れる保障はできないので非ブロックに返す
 				select {
 				case req.Resp <- err:
 				default:
 				}
+			default:
+				// メッセージもリクエストもなければ短くスリープ
+				procSleep.Call(10)
 			}
-		default:
-			// 何もしない
-		}
-
-		// done チェック（優先）
-		select {
-		case <-done:
-			// 終了要求
-			return
-		default:
 		}
 	}
 }
 
-// OpenPluginGUIWithWindow は即座に (done, exec, nil) を返し、GUI スレッド
+// OpenPluginGUIWithWindow は即座に (exec, nil) を返し、GUI スレッド
 // はバックグラウンドで動作する。exec に ExecRequest を送ると GUI スレッド上で実行される。
-func OpenPluginGUIWithWindow(plugin *vst2.Plugin, opcodes map[string]int) (chan struct{}, chan ExecRequest, error) {
+func OpenPluginGUIWithWindow(plugin *vst2.Plugin, opcodes map[string]int) (chan ExecRequest, error) {
 	openCode, ok := opcodes["PlugEditOpen"]
 	if !ok {
-		return nil, nil, fmt.Errorf("PlugEditOpen opcode not found")
+		return nil, fmt.Errorf("PlugEditOpen opcode not found")
 	}
 	closeCode, _ := opcodes["PlugEditClose"]
 
-	done := make(chan struct{})
 	exec := make(chan ExecRequest)
 
 	// GUI スレッドを立てる
@@ -209,7 +197,6 @@ func OpenPluginGUIWithWindow(plugin *vst2.Plugin, opcodes map[string]int) (chan 
 		if err != nil {
 			fmt.Printf("create window failed: %v\n", err)
 			// 起動失敗ならチャネルを閉じて終了
-			close(done)
 			close(exec)
 			return
 		}
@@ -219,15 +206,13 @@ func OpenPluginGUIWithWindow(plugin *vst2.Plugin, opcodes map[string]int) (chan 
 		plugin.Resume()
 
 		parentPtr := unsafe.Pointer(uintptr(hwnd))
-		fmt.Println("▶️ PlugEditOpen dispatch ")
-
 		plugin.Dispatch(vst2.PluginOpcode(openCode), 0, 0, parentPtr, 0)
 		fmt.Println("▶️ PlugEditOpen dispatched (parent HWND passed)")
 
 		// メッセージループ（中で exec を処理する）
-		runMessageLoop(done, exec)
+	runMessageLoop(exec)
 
-		// GUI 終了処理（done が閉じられたらここにくる）
+		// GUI 終了処理
 		plugin.Suspend()
 		if closeCode != 0 {
 			plugin.Dispatch(vst2.PluginOpcode(closeCode), 0, 0, nil, 0)
@@ -235,8 +220,7 @@ func OpenPluginGUIWithWindow(plugin *vst2.Plugin, opcodes map[string]int) (chan 
 
 		// exec を閉じる（送信側に通知）
 		close(exec)
-		// done は呼び出し側／送信用に既にクローズされている想定
 	}()
 
-	return done, exec, nil
+	return exec, nil
 }
