@@ -6,10 +6,22 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"runtime/trace"
 	"time"
 )
 
 func main() {
+	f, err := os.Create("trace.out")
+	if err != nil {
+		log.Fatalf("failed to create trace output file: %v", err)
+	}
+	defer f.Close()
+
+	if err := trace.Start(f); err != nil {
+		log.Fatalf("failed to start trace: %v", err)
+	}
+	defer trace.Stop()
+
 	var pluginPath string
 	pluginPath = os.Args[1]
 	if len(os.Args) < 2 || os.Args[1] == "--gui" {
