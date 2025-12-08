@@ -1,0 +1,57 @@
+http://localhost:50021/audio_query?text=%E3%83%86%E3%82%AD%E3%82%B9%E3%83%88%3F&speaker=1&enable_katakana_english=true
+?text=にbase64?エンコードで文字
+
+{
+  "accent_phrases": [
+    {
+      "moras": [
+        {
+          "text": "テ",
+          "consonant": "t",///子音
+          "consonant_length": 0.0727369412779808,//の長さ
+          "vowel": "e",///母音
+          "vowel_length": 0.1318332552909851,
+          "pitch": 5.911419868469238///ノードのピッチ
+        },
+        {
+          "text": "キ",
+          "consonant": "k",
+          "consonant_length": 0.06951668113470078,
+          "vowel": "I",
+          "vowel_length": 0.076276995241642,
+          "pitch": 0
+        },
+        {
+          "text": "ス",
+          "consonant": "s",
+          "consonant_length": 0.08548218011856079,
+          "vowel": "u",
+          "vowel_length": 0.07536246627569199,
+          "pitch": 5.894742012023926
+        },
+        {
+          "text": "ト",
+          "consonant": "t",
+          "consonant_length": 0.08034105598926544,
+          "vowel": "o",
+          "vowel_length": 0.23629078269004822,
+          "pitch": 5.71484375
+        }
+      ],
+      "accent": 1,
+      "pause_mora": null,
+      "is_interrogative": true///?か tなら語尾上げる？
+    }
+  ],///こっから下ほぼいらん？
+  "speedScale": 1,
+  "pitchScale": 0,
+  "intonationScale": 1,
+  "volumeScale": 1,
+  "prePhonemeLength": 0.1,
+  "postPhonemeLength": 0.1,
+  "pauseLength": null,///句読点などの無音時間
+  "pauseLengthScale": 1,///句読点などの無音時間（倍率）
+  "outputSamplingRate": 24000,
+  "outputStereo": false,
+  "kana": "テ'_キスト？"
+}

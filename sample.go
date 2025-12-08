@@ -1,4 +1,4 @@
-﻿package main
+package main
 
 import (
 	"bytes"
@@ -78,6 +78,7 @@ func loadPlagin(path string) (*vst2.VST, *vst2.Plugin, map[string]int, error) {
 	fmt.Printf("   プラグイン名: %s\n", name)
 	fmt.Printf("   ベンダー名: %s\n", vendor)
 	fmt.Printf("   パラメータ数: %d\n", numParams)
+	fmt.Println("opcode :", opcodes)
 	fmt.Println("---------------------------------------")
 
 	if numParams > 0 {
@@ -90,12 +91,11 @@ func loadPlagin(path string) (*vst2.VST, *vst2.Plugin, map[string]int, error) {
 }
 
 func main() {
-	if len(os.Args) < 2 {
-		log.Println(" 使用法: go run . <VST2 プラグインのパス> [bank.fxb] [--gui]")
-		return
+	var pluginPath string
+	pluginPath = os.Args[1]
+	if len(os.Args) < 2 || os.Args[1] == "--gui" {
+		pluginPath = "c:\\Program Files\\Vstplugins\\Piapro Studio VSTi.dll" // デフォルトのプラグインパス
 	}
-
-	pluginPath := os.Args[1]
 
 	vst, plugin, opcodes, err := loadPlagin(pluginPath)
 	if err != nil {
@@ -105,7 +105,7 @@ func main() {
 	defer plugin.Close()
 
 	openGUI := false
-	if len(os.Args) >= 3 && os.Args[len(os.Args)-1] == "--gui" {
+	if os.Args[len(os.Args)-1] == "--gui" {
 		openGUI = true
 	}
 
