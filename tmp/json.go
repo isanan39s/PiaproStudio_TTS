@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
+	"net/url"
+	"os"
 )
 
 // Mora は各音素の情報を保持します
@@ -36,89 +37,55 @@ type ResponseData struct {
 	Kana            string         `json:"kana"`
 }
 
+// 任意の文字列に変えるターゲット
+const targetText = "ﾐｸｻﾝｶﾜｲｲﾔｯﾀｰ"
+// const targetText = "Hello World!" 
+// const targetText = "テストテスト"
+
 func main() {
-	jsonData := `{
- "accent_phrases": [
-		{
-		  "moras": [
-			{
-			  "text": "テ",
-			  "consonant": "t",
-			  "consonant_length": 0.0727369412779808,
-			  "vowel": "e",
-			  "vowel_length": 0.1318332552909851,
-			  "pitch": 5.911419868469238
-			},
-			{
-			  "text": "キ",
-			  "consonant": "k",
-			  "consonant_length": 0.06951668113470078,
-			  "vowel": "I",
-			  "vowel_length": 0.076276995241642,
-			  "pitch": 0
-			},
-			{
-			  "text": "ス",
-			  "consonant": "s",
-			  "consonant_length": 0.08548218011856079,
-			  "vowel": "u",
-			  "vowel_length": 0.07536246627569199,
-			  "pitch": 5.894742012023926
-			},
-			{
-			  "text": "ト",
-			  "consonant": "t",
-			  "consonant_length": 0.08034105598926544,
-			  "vowel": "o",
-			  "vowel_length": 0.23629078269004822,
-			  "pitch": 5.71484375
-			}
-		  ],
-		  "accent": 1,
-		  "pause_mora": null,
-		  "is_interrogative": true
-		}
-	  ],
-	  "speedScale": 1,	
-	  "pitchScale": 0,
-	  "intonationScale": 1,
-	  "volumeScale": 1,
-	  "prePhonemeLength": 0.1,
-	  "postPhonemeLength": 0.1,
-	  "pauseLength": null,
-	  "pauseLengthScale": 1,
-	  "outputSamplingRate": 24000,
-	  "outputStereo": false,
-	  "kana": "テ'_キスト？"
-	}`
+	// ベースURLを定義
+	baseURL := "http://localhost:50021/audio_query"
 
-	url := "http://localhost:50021/" // リクエストを送信するURL
-	http_post_data := `{"name": "Go Developer", "language": "Go"}`
-	bodyReader := strings.NewReader(http_post_data)
-	// POSTリクエストを送信
-	// 第3引数にコンテンツタイプを指定します
-	resp, err := http.Post(url, "application/json", bodyReader)
+	// クエリパラメータを構築
+	queryParams := url.Values{}
+	queryParams.Add("text", targetText) // ここに任意の文字列を設定
+	queryParams.Add("speaker", "1")
+	queryParams.Add("enable_katakana_english", "true")
+
+	// 完全なリクエストURLを作成（url.Values.Encode()が自動的にエンコードします）
+	requestURL := baseURL + "?" + queryParams.Encode()
+	fmt.Printf("Request URL: %s\n", requestURL)
+
+	// HTTP POSTリクエストを作成（ボディは空）
+	req, err := http.NewRequest("POST", requestURL, strings.NewReader(""))
 	if err != nil {
-		fmt.Printf("POSTリクエストの送信中にエラーが発生しました: %v\n", err)
-		return
-	}
-	defer resp.Body.Close() // レスポンスボディを必ずクローズする
-
-	// レスポンスのステータスコードを確認
-	fmt.Printf("ステータスコード: %d\n", resp.StatusCode)
-
-	// レスポンスボディを読み込む
-	responseBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		fmt.Printf("レスポンスボディの読み込み中にエラーが発生しました: %v\n", err)
-		return
+		fmt.Printf("リクエストの作成中にエラーが発生しました: %v\n", err)
+		os.Exit(1)
 	}
 
-	// レスポンスボディの内容を表示
-	fmt.Printf("レスポンスボディ: %s\n", responseBody)
+	// リクエストを送信
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Printf("HTTPリクエストの送信中にエラーが発生しました: %v\n", err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	// レスポンスを処理
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Printf("レスポンスボディの読み取り中にエラーが発生しました: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("レスポンスステータス: %s\n", resp.Status)
+	fmt.Printf("レスポンスボディ: %s\n", string(body))
+
+	responseBody:=body
 
 	var data ResponseData
-	err := json.Unmarshal([]byte(jsonData), &data)
+	err = json.Unmarshal([]byte(responseBody), &data)
 	if err != nil {
 		fmt.Println("Error unmarshalling JSON:", err)
 		return
