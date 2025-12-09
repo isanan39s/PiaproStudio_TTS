@@ -22,10 +22,10 @@ type Mora struct {
 
 // AccentPhrase はアクセント句の情報を保持します
 type AccentPhrase struct {
-	Moras  []Mora `json:"moras"`
-	Accent int    `json:"accent"` ///アクセント位置
-	//PauseMora       *Mora  `json:"pause_mora"`       ///アクセント句の末尾につく無音モーラ
-	IsInterrogative bool `json:"is_interrogative"` ///?か tなら語尾上げる？
+	Moras  []Mora `json:"moras"`						/// 各音素
+	Accent int    `json:"accent"`		 				/// アクセント位置
+	//PauseMora       *Mora  `json:"pause_mora"`       	/// アクセント句の末尾につく無音モーラ
+	IsInterrogative bool `json:"is_interrogative"` 		/// ?か tなら語尾上げる？
 }
 
 // ResponseData は全体のレスポンス構造を保持します
@@ -37,23 +37,24 @@ type ResponseData struct {
 	Kana            string         `json:"kana"`
 }
 
+var g_httpClient = &http.Client{}
 // 任意の文字列に変えるターゲット
 const targetText = "ﾐｸｻﾝｶﾜｲｲﾔｯﾀｰ"
 // const targetText = "Hello World!" 
 // const targetText = "テストテスト"
 
-func main() {
-	// ベースURLを定義
+func get_Accents(text string)string{
+// ベースURLを定義
 	baseURL := "http://localhost:50021/audio_query"
 
-	// クエリパラメータを構築
-	queryParams := url.Values{}
-	queryParams.Add("text", targetText) // ここに任意の文字列を設定
-	queryParams.Add("speaker", "1")
-	queryParams.Add("enable_katakana_english", "true")
+	// クエリパラメータを構築(モーラ取得)
+	moraQueryParams := url.Values{}
+	moraQueryParams.Add("text", text) // ここに任意の文字列を設定
+	moraQueryParams.Add("speaker", "1")
+	moraQueryParams.Add("enable_katakana_english", "true")
 
 	// 完全なリクエストURLを作成（url.Values.Encode()が自動的にエンコードします）
-	requestURL := baseURL + "?" + queryParams.Encode()
+	requestURL := baseURL + "?" + moraQueryParams.Encode()
 	fmt.Printf("Request URL: %s\n", requestURL)
 
 	// HTTP POSTリクエストを作成（ボディは空）
@@ -64,8 +65,7 @@ func main() {
 	}
 
 	// リクエストを送信
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := g_httpClient.Do(req)
 	if err != nil {
 		fmt.Printf("HTTPリクエストの送信中にエラーが発生しました: %v\n", err)
 		os.Exit(1)
@@ -82,10 +82,20 @@ func main() {
 	fmt.Printf("レスポンスステータス: %s\n", resp.Status)
 	fmt.Printf("レスポンスボディ: %s\n", string(body))
 
-	responseBody:=body
+	return string(body)
 
+}
+
+
+func main() {
+	text:=targetText
+	if len(os.Args) >= 2 {
+		text=os.Args[1]
+	}
+
+	responseBody:=get_Accents(text)
 	var data ResponseData
-	err = json.Unmarshal([]byte(responseBody), &data)
+	err:= json.Unmarshal([]byte(responseBody), &data)
 	if err != nil {
 		fmt.Println("Error unmarshalling JSON:", err)
 		return
