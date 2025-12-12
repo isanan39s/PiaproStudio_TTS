@@ -1,14 +1,15 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
-	"unsafe"
-
 	"pipelined.dev/audio/vst2"
+	"strings"
+	"unsafe"
 )
 
 // デバッグ版 hostCallback: どの opcode でクラッシュするか特定用
@@ -90,11 +91,57 @@ func loadPlagin(path string) (*vst2.VST, *vst2.Plugin, map[string]int, error) {
 	return vst, plugin, opcodes, nil
 }
 
+// SaveFXB saves the plugin's state to an FXB file.
+func SaveFXB(plugin *vst2.Plugin, path string) error {
+	plugin.Start()
+	data := plugin.GetBankData()
+	plugin.Suspend()
+
+	if data == nil {
+		return fmt.Errorf("failed to get plugin bank data")
+	}
+
+	if err := ioutil.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("failed to write fxb file: %w", err)
+	}
+
+	fmt.Printf("Plugin state saved to %s\n", path)
+	return nil
+}
+
 func main() {
-	var pluginPath string
-	pluginPath = os.Args[1]
-	if len(os.Args) < 2 || os.Args[1] == "--gui" {
-		pluginPath = "c:\\Program Files\\Vstplugins\\Piapro Studio VSTi.dll" // デフォルトのプラグインパス
+	var pluginPath, savePath, loadPath string
+	var openGUI bool
+
+	// Parse command line arguments
+	for i := 1; i < len(os.Args); i++ {
+		arg := os.Args[i]
+		switch arg {
+		case "--save-fxb":
+			if i+1 < len(os.Args) {
+				savePath = os.Args[i+1]
+				i++ // consume value
+			} else {
+				log.Fatal("--save-fxb requires a file path")
+			}
+		case "--load-fxb":
+			if i+1 < len(os.Args) {
+				loadPath = os.Args[i+1]
+				i++ // consume value
+			} else {
+				log.Fatal("--load-fxb requires a file path")
+			}
+		case "--gui":
+			openGUI = true
+		default:
+			if !strings.HasPrefix(arg, "--") && pluginPath == "" {
+				pluginPath = arg
+			}
+		}
+	}
+
+	if pluginPath == "" {
+		pluginPath = "c:\\Program Files\\Vstplugins\\Piapro Studio VSTi.dll" // Default plugin path
 	}
 
 	vst, plugin, opcodes, err := loadPlagin(pluginPath)
@@ -104,32 +151,33 @@ func main() {
 	defer vst.Close()
 	defer plugin.Close()
 
-	openGUI := false
-	if os.Args[len(os.Args)-1] == "--gui" {
-		openGUI = true
-	}
-
-	// バンクファイルが指定されていれば読み込み（--gui フラグと独立して処理）
-	if len(os.Args) >= 3 && os.Args[2] != "" && os.Args[2] != "--gui" {
-		println("setting .fbx")
-		bankPath := os.Args[2]
-		data, err := ioutil.ReadFile(bankPath)
+	// Load FXB if requested
+	if loadPath != "" {
+		fmt.Println("Loading .fxb:", loadPath)
+		data, err := ioutil.ReadFile(loadPath)
 		if err != nil {
-			log.Fatalf(" バンクファイルの読み込みに失敗しました: %v", err)
+			log.Fatalf("Failed to read bank file: %v", err)
 		}
-
-		// バンクをセットする前に plugin を開始する
 		plugin.Start()
 		plugin.SetBankData(data)
-		println(" バンクをセットしました:", bankPath, "size", len(data))
+		fmt.Println("Bank set:", loadPath, "size", len(data))
+		plugin.Suspend() // Suspend after setting data if not opening GUI
 	}
 
 	if openGUI {
-		// win32.go の関数（OpenPluginGUIWithWindow）を呼ぶ
 		if err := OpenPluginGUIWithWindow(plugin, opcodes); err != nil {
 			log.Fatalf("failed to open plugin GUI: %v", err)
 		}
 	}
 
-	fmt.Println("プログラムを正常に終了します。")
+	// Save FXB if requested
+	if savePath != "" {
+		println("enter to save parmetors")
+		bufio.NewReader(os.Stdin).ReadBytes('\n')
+		if err := SaveFXB(plugin, savePath); err != nil {
+			log.Fatalf("Failed to save FXB file: %v", err)
+		}
+	}
+
+	fmt.Println("Program finished successfully.")
 }
