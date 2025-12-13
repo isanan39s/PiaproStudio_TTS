@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"fmt"
@@ -162,7 +162,7 @@ func OpenPluginGUIWithWindow(plugin *vst2.Plugin, opcodes map[string]int) error 
 	if !ok {
 		return fmt.Errorf("PlugEditOpen opcode not found")
 	}
-	closeCode, _ := opcodes["PlugEditClose"]
+	//closeCode, _ := opcodes["PlugEditClose"]
 
 	fmt.Println("create window")
 	hwnd, err := createWin32Window("VST Plugin Host Window")
@@ -173,7 +173,7 @@ func OpenPluginGUIWithWindow(plugin *vst2.Plugin, opcodes map[string]int) error 
 
 	// プラグインを実行状態にする（GUI 開く前に必須）
 	plugin.Start()
-	plugin.Resume()
+	//plugin.Resume()
 
 	// call PlugEditOpen with parent HWND
 	parentPtr := unsafe.Pointer(uintptr(hwnd))
@@ -191,9 +191,9 @@ func OpenPluginGUIWithWindow(plugin *vst2.Plugin, opcodes map[string]int) error 
 	//plugin.Suspend()
 
 	// close editor if opcode exists
-	if closeCode != 0 {
-		plugin.Dispatch(vst2.PluginOpcode(closeCode), 0, 0, nil, 0)
-	}
+	// if closeCode != 0 {
+	// 	plugin.Dispatch(vst2.PluginOpcode(closeCode), 0, 0, nil, 0)
+	// }
 
 	return nil
 }

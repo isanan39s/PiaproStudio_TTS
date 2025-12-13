@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"bufio"
@@ -253,7 +253,11 @@ func vstiPlaginRunner(host2vstiMessageChan chan string, vst *vst2.VST, plugin *v
 				if err != nil {
 					log.Fatalf("Failed to read bank file: %v", err)
 				}
+			time.Sleep(200*time.Millisecond)
+
 				plugin.SetBankData(data)
+			time.Sleep(200*time.Millisecond)
+
 				fmt.Println("Bank set:", msgFromHost[1], "size", len(data))
 				//plugin.Suspend() // Suspend after setting data if not opening GUI
 			}
@@ -261,6 +265,7 @@ func vstiPlaginRunner(host2vstiMessageChan chan string, vst *vst2.VST, plugin *v
 		case "openGUI":
 			OpenPluginGUIWithWindow(plugin, opcode)
 			is_openWindow = true
+			time.Sleep(200*time.Millisecond)
 
 		case "saveFXB":
 			if err := SaveFXB(plugin, msgFromHost[1]); err != nil {
@@ -334,8 +339,12 @@ func main() {
 	plugin.Start()
 	defer vst.Close()
 	defer plugin.Close()
+			time.Sleep(200*time.Millisecond)
+			time.Sleep(200*time.Millisecond)
 
 	go vstiPlaginRunner(host2vstiMessageChan, vst, plugin, opcodes)
+			time.Sleep(200*time.Millisecond)
+			time.Sleep(200*time.Millisecond)
 
 	/// fxb投入
 	if loadPath != "" {
@@ -353,6 +362,8 @@ func main() {
 	println("enter to save parmetors")
 
 	/// fxb出力 Enterで
+		bufio.NewReader(os.Stdin).ReadBytes('\n')
+
 	if savePath != "" {
 
 		var massage_source = []string{"saveFXB", loadPath}
