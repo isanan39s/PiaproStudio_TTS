@@ -8,6 +8,7 @@ import (
 	"strings"
 	"net/url"
 	"os"
+	"time"
 )
 
 // Mora は各音素の情報を保持します
@@ -87,7 +88,7 @@ func get_Accents(text string)string{
 }
 
 
-func main() {
+func main_a() {
 	text:=targetText
 	if len(os.Args) >= 2 {
 		text=os.Args[1]
@@ -109,3 +110,31 @@ func main() {
 		fmt.Println("データ構造が予期せぬ形式です。")
 	}
 }
+
+
+func sendMessage(messages chan string) {
+    messages <- "彗星のごとく現れたスターの原石！アイドルVTuberの星街すいせいです！！" // メッセージを送る
+    time.Sleep(time.Second)
+    messages <- "すいちゃんは～？" // もう一つメッセージを送る
+    time.Sleep(time.Second)
+    messages <- "今日もかわいいー！" // さらにもう一つメッセージを送る
+}
+
+// 星詠みがメッセージを受け取る関数
+func receiveMessage(messages chan string) {
+    for i := 0; i < 3; i++ {
+        msg := <-messages // メッセージを受け取る
+        fmt.Println("星詠み:", msg)
+    }
+}
+
+func main() {
+    messages := make(chan string, 3) // バッファ付きチャネルを作成
+
+    go sendMessage(messages)  // 星街すいせいgoroutineをスタート
+    go receiveMessage(messages) // 星詠みgoroutineをスタート
+
+    // goroutineが終わるのを少し待つ
+    time.Sleep(3 * time.Second)
+}
+

@@ -182,13 +182,13 @@ func OpenPluginGUIWithWindow(plugin *vst2.Plugin, opcodes map[string]int) error 
 	fmt.Println(" PlugEditOpen dispatched (parent HWND passed)")
 	fmt.Println("Close the window to exit...")
 
-	done := make(chan struct{})
+	//done := make(chan struct{})
 
 	// メッセージループを実行（ウィンドウ破棄で終了）
-	runMessageLoop(done)
+	//runMessageLoop(done)
 
 	// Suspend and close
-	plugin.Suspend()
+	//plugin.Suspend()
 
 	// close editor if opcode exists
 	if closeCode != 0 {
