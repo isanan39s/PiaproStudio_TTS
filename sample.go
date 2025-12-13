@@ -1,4 +1,4 @@
-﻿package main
+package main
 
 import (
 	"bufio"
@@ -201,7 +201,7 @@ func vstiPlaginRunner(host2vstiMessageChan chan string, vst *vst2.VST, plugin *v
 	is_openWindow := false
 	var msg MSG
 	for {
-		
+
 		if is_openWindow {
 			// PeekMessage: ノンブロッキングでメッセージをチェック
 			ret, _, _ := procPeekMessageW.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0, PM_REMOVE)
@@ -219,7 +219,6 @@ func vstiPlaginRunner(host2vstiMessageChan chan string, vst *vst2.VST, plugin *v
 			}
 
 		}
-
 
 		var msgFromHost []string
 		// println("get msg")
@@ -253,10 +252,10 @@ func vstiPlaginRunner(host2vstiMessageChan chan string, vst *vst2.VST, plugin *v
 				if err != nil {
 					log.Fatalf("Failed to read bank file: %v", err)
 				}
-			time.Sleep(200*time.Millisecond)
+				time.Sleep(200 * time.Millisecond)
 
 				plugin.SetBankData(data)
-			time.Sleep(200*time.Millisecond)
+				time.Sleep(200 * time.Millisecond)
 
 				fmt.Println("Bank set:", msgFromHost[1], "size", len(data))
 				//plugin.Suspend() // Suspend after setting data if not opening GUI
@@ -265,7 +264,81 @@ func vstiPlaginRunner(host2vstiMessageChan chan string, vst *vst2.VST, plugin *v
 		case "openGUI":
 			OpenPluginGUIWithWindow(plugin, opcode)
 			is_openWindow = true
-			time.Sleep(200*time.Millisecond)
+			time.Sleep(200 * time.Millisecond)
+
+		case "saveFXB":
+			if err := SaveFXB(plugin, msgFromHost[1]); err != nil {
+				log.Fatalf("Failed to save FXB file: %v", err)
+			}
+		}
+	}
+
+}
+
+func vstiPlaginRunner(host2vstiMessageChan chan string, vst *vst2.VST, plugin *vst2.Plugin, opcode map[string]int) {
+	println("start plagin thead")
+	is_openWindow := false
+	var msg MSG
+	for {
+
+		if is_openWindow {
+			// PeekMessage: ノンブロッキングでメッセージをチェック
+			ret, _, _ := procPeekMessageW.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0, PM_REMOVE)
+
+			if ret > 0 {
+				// メッセージがあれば処理
+				if msg.Message == 0x0012 { // WM_QUIT
+					break
+				}
+				procTranslateMessage.Call(uintptr(unsafe.Pointer(&msg)))
+				procDispatchMessageW.Call(uintptr(unsafe.Pointer(&msg)))
+			} else {
+				// メッセージがなければ少し待機（CPU 負荷軽減）
+				procSleep.Call(100)
+			}
+
+		}
+
+		var msgFromHost []string
+		// println("get msg")
+		// if len(msgFromHost) <= 0 {
+		// 	println("contenyu-")
+		// 	continue
+		// }
+
+		select {
+		case value, ok := <-host2vstiMessageChan:
+			if ok {
+				fmt.Println("値を取得しました:", value)
+				msgFromHost = strings.SplitN(value, ":", 2)
+			} else {
+				fmt.Println("チャネルは閉じられています。ループ終了。")
+				return // クローズされたらループを抜ける
+			}
+		default:
+			// データがなかった場合、少し待機してから次のループへ
+			//fmt.Println("データなし。少し待機してコンティニュー...")
+			//time.Sleep(100 * time.Millisecond) // ここで意図的に待機
+			continue
+		}
+
+		println("prosess msg")
+		switch msgFromHost[0] {
+		case "loadFXB":
+			if len(msgFromHost) >= 2 && msgFromHost[1] != "" {
+				fmt.Println("Loading .fxb:", msgFromHost[1])
+				data, err := ioutil.ReadFile(msgFromHost[1])
+				if err != nil {
+					log.Fatalf("Failed to read bank file: %v", err)
+				}
+				plugin.SetBankData(data)
+				fmt.Println("Bank set:", msgFromHost[1], "size", len(data))
+				//plugin.Suspend() // Suspend after setting data if not opening GUI
+			}
+
+		case "openGUI":
+			OpenPluginGUIWithWindow(plugin, opcode)
+			is_openWindow = true
 
 		case "saveFXB":
 			if err := SaveFXB(plugin, msgFromHost[1]); err != nil {
@@ -339,12 +412,16 @@ func main() {
 	plugin.Start()
 	defer vst.Close()
 	defer plugin.Close()
-			time.Sleep(200*time.Millisecond)
-			time.Sleep(200*time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 
 	go vstiPlaginRunner(host2vstiMessageChan, vst, plugin, opcodes)
-			time.Sleep(200*time.Millisecond)
-			time.Sleep(200*time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
+
+	/// fxb投入
+
+	go vstiPlaginRunner(host2vstiMessageChan, vst, plugin, opcodes)
 
 	/// fxb投入
 	if loadPath != "" {
@@ -358,12 +435,13 @@ func main() {
 
 		host2vstiMessageChan <- "openGUI"
 		println("openGUI")
+
 	}
 	println("enter to save parmetors")
 
-	/// fxb出力 Enterで
-		bufio.NewReader(os.Stdin).ReadBytes('\n')
+	bufio.NewReader(os.Stdin).ReadBytes('\n')
 
+	/// fxb出力 Enterで
 	if savePath != "" {
 
 		var massage_source = []string{"saveFXB", loadPath}
