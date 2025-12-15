@@ -280,6 +280,8 @@ func vstiPlaginRunner(host2vstiMessageChan chan string, vst *vst2.VST, plugin *v
 		case "saveFXB":
 			if err := SaveFXB(plugin, msgFromHost[1]); err != nil {
 				log.Fatalf("Failed to save FXB file: %v", err)
+case "exit":
+brake
 			}
 		}
 	}
@@ -395,6 +397,8 @@ func main() {
 			log.Fatalf("Failed to process and save WAV: %v", err)
 		}
 	}
-
+host2vstiMessageChan<ｰ"exit"
+time.Sleep(500 * time.Millisecond
 	fmt.Println("Program finished successfully.")
+
 }
