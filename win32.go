@@ -1,4 +1,4 @@
-﻿package main
+package main
 
 import (
 	"fmt"
@@ -174,8 +174,6 @@ func OpenPluginGUIWithWindow(plugin *vst2.Plugin, opcodes map[string]int) error 
 	plugin.Dispatch(vst2.PluginOpcode(opcodes["PlugEditOpen"]), 0, 0, unsafe.Pointer(uintptr(hwnd)), 0)
 	fmt.Println(" PlugEditOpen dispatched (parent HWND passed)")
 	fmt.Println("Close the window to exit...")
-
-
 
 	return nil
 }

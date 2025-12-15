@@ -1,4 +1,4 @@
-﻿package main
+package main
 
 import (
 	"bufio"
@@ -200,14 +200,13 @@ func vstiPlaginRunner(host2vstiMessageChan chan string, vst *vst2.VST, plugin *v
 	println("start plagin thead")
 	is_openWindow := false
 	var msg MSG
-		loopcnt:=0
+	loopcnt := 0
 
 	for {
 		loopcnt++
-		if loopcnt>823901 {
-			loopcnt=0
+		if loopcnt > 823901 {
+			loopcnt = 0
 		}
-
 
 		if is_openWindow {
 			// PeekMessage: ノンブロッキングでメッセージをチェック
@@ -223,15 +222,15 @@ func vstiPlaginRunner(host2vstiMessageChan chan string, vst *vst2.VST, plugin *v
 			} else {
 				// メッセージがなければ少し待機（CPU 負荷軽減）
 			}
-				procSleep.Call(10)
+			procSleep.Call(10)
 
-		}else{
-				procSleep.Call(250)
+		} else {
+			procSleep.Call(250)
 
 		}
 
 		var msgFromHost []string
-		println("get msg",loopcnt)
+		println("get msg", loopcnt)
 		// if len(msgFromHost) <= 0 {
 		// 	println("contenyu-")
 		// 	continue
@@ -271,7 +270,7 @@ func vstiPlaginRunner(host2vstiMessageChan chan string, vst *vst2.VST, plugin *v
 			}
 
 		case "openGUI":
-						time.Sleep(200 * time.Millisecond)
+			time.Sleep(200 * time.Millisecond)
 
 			OpenPluginGUIWithWindow(plugin, opcode)
 			is_openWindow = true
@@ -280,15 +279,13 @@ func vstiPlaginRunner(host2vstiMessageChan chan string, vst *vst2.VST, plugin *v
 		case "saveFXB":
 			if err := SaveFXB(plugin, msgFromHost[1]); err != nil {
 				log.Fatalf("Failed to save FXB file: %v", err)
-case "exit":
-brake
 			}
+		case "vstiexit":
+			break
 		}
 	}
-
+	println("さいなら")
 }
-
-
 
 func main() {
 	host2vstiMessageChan := make(chan string, 127)
@@ -362,7 +359,6 @@ func main() {
 
 	/// fxb投入
 
-
 	/// fxb投入
 	if loadPath != "" {
 		var massage_source = []string{"loadFXB", loadPath}
@@ -397,8 +393,9 @@ func main() {
 			log.Fatalf("Failed to process and save WAV: %v", err)
 		}
 	}
-host2vstiMessageChan<ｰ"exit"
-time.Sleep(500 * time.Millisecond
+
+	host2vstiMessageChan <- "vstiexit"
+	time.Sleep(500 * time.Millisecond)
 	fmt.Println("Program finished successfully.")
 
 }
