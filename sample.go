@@ -200,7 +200,14 @@ func vstiPlaginRunner(host2vstiMessageChan chan string, vst *vst2.VST, plugin *v
 	println("start plagin thead")
 	is_openWindow := false
 	var msg MSG
+		loopcnt:=0
+
 	for {
+		loopcnt++
+		if loopcnt>823901 {
+			loopcnt=0
+		}
+
 
 		if is_openWindow {
 			// PeekMessage: ノンブロッキングでメッセージをチェック
@@ -215,18 +222,20 @@ func vstiPlaginRunner(host2vstiMessageChan chan string, vst *vst2.VST, plugin *v
 				procDispatchMessageW.Call(uintptr(unsafe.Pointer(&msg)))
 			} else {
 				// メッセージがなければ少し待機（CPU 負荷軽減）
-				procSleep.Call(100)
 			}
+				procSleep.Call(10)
+
+		}else{
+				procSleep.Call(250)
 
 		}
 
 		var msgFromHost []string
-		// println("get msg")
+		println("get msg",loopcnt)
 		// if len(msgFromHost) <= 0 {
 		// 	println("contenyu-")
 		// 	continue
 		// }
-
 		select {
 		case value, ok := <-host2vstiMessageChan:
 			if ok {
@@ -258,10 +267,12 @@ func vstiPlaginRunner(host2vstiMessageChan chan string, vst *vst2.VST, plugin *v
 				time.Sleep(200 * time.Millisecond)
 
 				fmt.Println("Bank set:", msgFromHost[1], "size", len(data))
-				//plugin.Suspend() // Suspend after setting data if not opening GUI
+				plugin.Suspend() // Suspend after setting data if not opening GUI
 			}
 
 		case "openGUI":
+						time.Sleep(200 * time.Millisecond)
+
 			OpenPluginGUIWithWindow(plugin, opcode)
 			is_openWindow = true
 			time.Sleep(200 * time.Millisecond)
@@ -349,7 +360,6 @@ func main() {
 
 	/// fxb投入
 
-	go vstiPlaginRunner(host2vstiMessageChan, vst, plugin, opcodes)
 
 	/// fxb投入
 	if loadPath != "" {
