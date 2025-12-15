@@ -200,6 +200,7 @@ func vstiPlaginRunner(host2vstiMessageChan chan string, vst *vst2.VST, plugin *v
 	println("start plagin thead")
 	is_openWindow := false
 	var msg MSG
+
 	for {
 		
 		if is_openWindow {
@@ -332,6 +333,7 @@ func main() {
 		log.Fatalf("failed to load plugin: %v", err)
 	}
 	plugin.Start()
+	plugin.Dispatch(vst2.PluginOpcode(opcodes["plugStateChanged"]),0,0,nil,0)
 	defer vst.Close()
 	defer plugin.Close()
 
