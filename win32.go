@@ -158,12 +158,6 @@ func runMessageLoop(done chan struct{}) {
 // OpenPluginGUIWithWindow creates a Win32 window, opens the plugin editor with that window as parent,
 // runs a message loop in a goroutine, waits for Enter on stdin, then closes the editor.
 func OpenPluginGUIWithWindow(plugin *vst2.Plugin, opcodes map[string]int) error {
-	openCode, ok := opcodes["PlugEditOpen"]
-	if !ok {
-		return fmt.Errorf("PlugEditOpen opcode not found")
-	}
-	closeCode, _ := opcodes["PlugEditClose"]
-
 	fmt.Println("create window")
 	hwnd, err := createWin32Window("VST Plugin Host Window")
 	if err != nil {
@@ -176,24 +170,10 @@ func OpenPluginGUIWithWindow(plugin *vst2.Plugin, opcodes map[string]int) error 
 	plugin.Resume()
 
 	// call PlugEditOpen with parent HWND
-	parentPtr := unsafe.Pointer(uintptr(hwnd))
 	fmt.Println("open window")
-	plugin.Dispatch(vst2.PluginOpcode(openCode), 0, 0, parentPtr, 0)
+	plugin.Dispatch(vst2.PluginOpcode(opcodes["PlugEditOpen"]), 0, 0, unsafe.Pointer(uintptr(hwnd)), 0)
 	fmt.Println(" PlugEditOpen dispatched (parent HWND passed)")
 	fmt.Println("Close the window to exit...")
-
-	//done := make(chan struct{})
-
-	// メッセージループを実行（ウィンドウ破棄で終了）
-	//runMessageLoop(done)
-
-	// Suspend and close
-	//plugin.Suspend()
-
-	// close editor if opcode exists
-	if closeCode != 0 {
-		plugin.Dispatch(vst2.PluginOpcode(closeCode), 0, 0, nil, 0)
-	}
 
 	return nil
 }

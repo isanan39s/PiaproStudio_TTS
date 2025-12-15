@@ -200,9 +200,15 @@ func vstiPlaginRunner(host2vstiMessageChan chan string, vst *vst2.VST, plugin *v
 	println("start plagin thead")
 	is_openWindow := false
 	var msg MSG
+	loopcnt := 0
+
 
 	for {
-		
+		loopcnt++
+		if loopcnt > 823901 {
+			loopcnt = 0
+		}
+
 		if is_openWindow {
 			// PeekMessage: ノンブロッキングでメッセージをチェック
 			ret, _, _ := procPeekMessageW.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0, PM_REMOVE)
@@ -216,19 +222,20 @@ func vstiPlaginRunner(host2vstiMessageChan chan string, vst *vst2.VST, plugin *v
 				procDispatchMessageW.Call(uintptr(unsafe.Pointer(&msg)))
 			} else {
 				// メッセージがなければ少し待機（CPU 負荷軽減）
-				procSleep.Call(100)
 			}
+			procSleep.Call(10)
+
+		} else {
+			procSleep.Call(250)
 
 		}
 
-
 		var msgFromHost []string
-		// println("get msg")
+		println("get msg", loopcnt)
 		// if len(msgFromHost) <= 0 {
 		// 	println("contenyu-")
 		// 	continue
 		// }
-
 		select {
 		case value, ok := <-host2vstiMessageChan:
 			if ok {
@@ -254,22 +261,31 @@ func vstiPlaginRunner(host2vstiMessageChan chan string, vst *vst2.VST, plugin *v
 				if err != nil {
 					log.Fatalf("Failed to read bank file: %v", err)
 				}
+				time.Sleep(200 * time.Millisecond)
+
 				plugin.SetBankData(data)
+				time.Sleep(200 * time.Millisecond)
+
 				fmt.Println("Bank set:", msgFromHost[1], "size", len(data))
-				//plugin.Suspend() // Suspend after setting data if not opening GUI
+				plugin.Suspend() // Suspend after setting data if not opening GUI
 			}
 
 		case "openGUI":
+			time.Sleep(200 * time.Millisecond)
+
 			OpenPluginGUIWithWindow(plugin, opcode)
 			is_openWindow = true
+			time.Sleep(200 * time.Millisecond)
 
 		case "saveFXB":
 			if err := SaveFXB(plugin, msgFromHost[1]); err != nil {
 				log.Fatalf("Failed to save FXB file: %v", err)
 			}
+		case "vstiexit":
+			break
 		}
 	}
-
+	println("さいなら")
 }
 
 func main() {
@@ -336,8 +352,14 @@ func main() {
 	plugin.Dispatch(vst2.PluginOpcode(opcodes["plugStateChanged"]),0,0,nil,0)
 	defer vst.Close()
 	defer plugin.Close()
+	time.Sleep(200 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 
 	go vstiPlaginRunner(host2vstiMessageChan, vst, plugin, opcodes)
+	time.Sleep(200 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
+
+	/// fxb投入
 
 	/// fxb投入
 	if loadPath != "" {
@@ -351,8 +373,11 @@ func main() {
 
 		host2vstiMessageChan <- "openGUI"
 		println("openGUI")
+
 	}
 	println("enter to save parmetors")
+
+	bufio.NewReader(os.Stdin).ReadBytes('\n')
 
 	/// fxb出力 Enterで
 	if savePath != "" {
@@ -371,5 +396,8 @@ func main() {
 		}
 	}
 
+	host2vstiMessageChan <- "vstiexit"
+	time.Sleep(500 * time.Millisecond)
 	fmt.Println("Program finished successfully.")
+
 }
