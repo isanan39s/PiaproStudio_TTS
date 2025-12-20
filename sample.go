@@ -202,7 +202,6 @@ func vstiPlaginRunner(host2vstiMessageChan chan string, vst *vst2.VST, plugin *v
 	var msg MSG
 	loopcnt := 0
 
-
 	for {
 		loopcnt++
 		if loopcnt > 823901 {
@@ -285,6 +284,10 @@ func vstiPlaginRunner(host2vstiMessageChan chan string, vst *vst2.VST, plugin *v
 			break
 		}
 	}
+
+	if is_openWindow {
+		plugin.Dispatch(vst2.PluginOpcode(opcode["PlugEditClose"]), 0, 0, nil, 0)
+	}
 	println("さいなら")
 }
 
@@ -349,7 +352,7 @@ func main() {
 		log.Fatalf("failed to load plugin: %v", err)
 	}
 	plugin.Start()
-	plugin.Dispatch(vst2.PluginOpcode(opcodes["plugStateChanged"]),0,0,nil,0)
+	plugin.Dispatch(vst2.PluginOpcode(opcodes["plugStateChanged"]), 0, 0, nil, 0)
 	defer vst.Close()
 	defer plugin.Close()
 	time.Sleep(200 * time.Millisecond)
