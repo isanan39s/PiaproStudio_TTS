@@ -385,7 +385,8 @@ func main() {
 	/// fxb出力 Enterで
 	if savePath != "" {
 
-		var massage_source = []string{"saveFXB", loadPath}
+		// Bug fix: Changed loadPath to savePath to use the correct save file path.
+		var massage_source = []string{"saveFXB", savePath}
 		host2vstiMessageChan <- strings.Join(massage_source, ":")
 		println(strings.Join(massage_source, ":"))
 	}
@@ -394,9 +395,10 @@ func main() {
 	bufio.NewReader(os.Stdin).ReadBytes('\n')
 	// Process and save WAV if requested
 	if outputWavPath != "" {
-		if err := processAndSaveWav(plugin, outputWavPath, duration); err != nil {
-			log.Fatalf("Failed to process and save WAV: %v", err)
-		}
+		// Send a message to the plugin runner goroutine to handle WAV processing safely.
+		wavMsg := fmt.Sprintf("processWAV:%s:%s", outputWavPath, duration.String())
+		host2vstiMessageChan <- wavMsg
+		println(wavMsg)
 	}
 
 	host2vstiMessageChan <- "vstiexit"
