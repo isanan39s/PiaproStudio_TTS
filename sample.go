@@ -17,11 +17,14 @@ import (
 	"pipelined.dev/audio/vst2"
 )
 
+var (
+	hostCurrentSample int64         // Global sample counter for the host callback.
+	hostTimeInfo      vst2.TimeInfo // Global TimeInfo struct to ensure a stable pointer is passed to the plugin.
+)
+
 // デバッグ版 hostCallback: どの opcode でクラッシュするか特定用
 func hostCallback(op vst2.HostOpcode, index int32, value int64, ptr unsafe.Pointer, opt float32) int64 {
-	// This callback is noisy, so we'll comment it out for now.
-	// fmt.Printf("[hostCallback] opcode=%v (%d) index=%d value=%d\n", op, op, index, value)
-
+	fmt.Printf("[hostCallback] opcode=%v (%d) index=%d value=%d\n", op, op, index, value)
 	switch op {
 	case vst2.HostGetVendorVersion:
 		return 10
@@ -32,9 +35,28 @@ func hostCallback(op vst2.HostOpcode, index int32, value int64, ptr unsafe.Point
 	case vst2.HostGetCurrentProcessLevel:
 		return int64(0)
 	case vst2.HostGetTime:
-		return 0
-	case vst2.HostCanDo:
-		return 0
+		const (
+			sampleRate = 48000.0
+			tempo      = 120.0
+		)
+		// Provide a more detailed TimeInfo struct to the plugin.
+		// Piapro Studio requires musical context (tempo, bars, beats) to function correctly.
+		samplesPerBeat := (sampleRate * 60.0) / tempo
+		hostTimeInfo = vst2.TimeInfo{
+			SamplePos:          float64(hostCurrentSample),
+			SampleRate:         sampleRate,
+			Tempo:              tempo,
+			BarStartPos:        0.0,                                           // Dummy value: assume we are in the first bar.
+			PpqPos:             float64(hostCurrentSample) / samplesPerBeat,   // Musical position in quarter notes.
+			TimeSigNumerator:   4,                                           // Dummy value: 4/4 time.
+			TimeSigDenominator: 4,                                           // Dummy value: 4/4 time.
+			Flags: vst2.TransportPlaying |
+				vst2.TempoValid |
+				vst2.PpqPosValid |
+				vst2.TimeSigValid |
+				vst2.BarsValid,
+		}
+		return int64(uintptr(unsafe.Pointer(&hostTimeInfo)))
 	case vst2.HostOpcode(6): // hostWantMidi (opcode 6)
 		return 1
 	case vst2.HostGetVendorString, vst2.HostGetProductString:
@@ -44,7 +66,6 @@ func hostCallback(op vst2.HostOpcode, index int32, value int64, ptr unsafe.Point
 	case vst2.HostSizeWindow:
 		return 0
 	default:
-		// デバッグ: 予期しない opcode をログ出力
 		// fmt.Printf("[hostCallback] ⚠️ UNHANDLED opcode=%v (%d)\n", op, op)
 		return 0
 	}
@@ -99,9 +120,8 @@ func loadPlagin(path string) (*vst2.VST, *vst2.Plugin, map[string]int, error) {
 
 // SaveFXB saves the plugin's state to an FXB file.
 func SaveFXB(plugin *vst2.Plugin, path string) error {
-	plugin.Start()
+	// Plugin lifecycle (Start/Suspend) is managed by the vstiPlaginRunner.
 	data := plugin.GetBankData()
-	plugin.Suspend()
 
 	if data == nil {
 		return fmt.Errorf("failed to get plugin bank data")
@@ -116,84 +136,153 @@ func SaveFXB(plugin *vst2.Plugin, path string) error {
 }
 
 func processAndSaveWav(plugin *vst2.Plugin, path string, duration time.Duration) error {
+
 	const (
+
 		sampleRate = 48000
+
 		channels   = 2
+
 		bitDepth   = 16
+
 		bufferSize = 512
+
 	)
 
-	// Create output file
+
+
+	// --- 初期設定 ---
+
 	outFile, err := os.Create(path)
+
 	if err != nil {
+
 		return fmt.Errorf("failed to create output file: %w", err)
+
 	}
+
 	defer outFile.Close()
 
-	// Create WAV encoder
+
+
 	encoder := wav.NewEncoder(outFile, sampleRate, bitDepth, channels, 1) // 1 for PCM
 
-	// Create audio buffer
 	numSamples := int(duration.Seconds() * sampleRate)
+
 	intBuf := &audio.IntBuffer{
-		Format: &audio.Format{
-			NumChannels: channels,
-			SampleRate:  sampleRate,
-		},
+
+		Format:         &audio.Format{NumChannels: channels, SampleRate: sampleRate},
+
 		Data:           make([]int, 0, numSamples*channels),
+
 		SourceBitDepth: bitDepth,
+
 	}
 
-	// Start plugin
+
+
 	plugin.SetSampleRate(sampleRate)
+
 	plugin.SetBufferSize(bufferSize)
-	plugin.Start()
-	defer plugin.Suspend()
 
-	// Send a MIDI note-on event to trigger sound
-	// MIDI Note On: channel 1, note C4 (60), velocity 100
-	noteOn := vst2.MIDIEvent{
-		DeltaFrames: 0,
-		Data:        [3]byte{0x90, 60, 100},
-	}
-	events := vst2.Events(&noteOn)
-	defer events.Free()
-	plugin.Dispatch(vst2.PlugProcessEvents, 0, 0, unsafe.Pointer(events), 0)
+	println("[saveWave]inited")
 
-	// Process audio
+
+
+	// --- オーディオ処理ループ ---
+
 	fmt.Printf("Processing %.2f seconds of audio...\n", duration.Seconds())
+
 	remainingSamples := numSamples
+
+
+
 	for remainingSamples > 0 {
+
 		samplesToProcess := bufferSize
+
 		if samplesToProcess > remainingSamples {
+
 			samplesToProcess = remainingSamples
+
 		}
 
-		// Create VST buffers
+		println("[saveWave]aaa", remainingSamples)
+
+
+
+		// バッファをループの内側で確保
+
 		in := vst2.NewFloatBuffer(channels, samplesToProcess)
+
 		out := vst2.NewFloatBuffer(channels, samplesToProcess)
 
-		// Process audio
+
+
+		println("[saveWave]bbb", remainingSamples)
+
+
+
+		// MIDIイベントの送信は、Piapro Studioが内部で音階・歌詞を管理するため不要
+
+		// オーディオ処理
+
 		plugin.ProcessFloat(in, out)
 
-		// Convert and append to buffer
+		println("[saveWave]ccc", remainingSamples)
+
+
+
+		// バッファの変換と追記
+
 		for i := 0; i < samplesToProcess*channels; i++ {
+
 			sample := out.Channel(i % channels)[i/channels]
+
 			intBuf.Data = append(intBuf.Data, int(sample*32767.0))
+
 		}
 
+		println("[saveWave]ddd", remainingSamples)
+
+
+
+		// 確保したバッファをループの最後で解放
+
 		in.Free()
+
 		out.Free()
+
+
+
 		remainingSamples -= samplesToProcess
+
+		hostCurrentSample += int64(samplesToProcess) // ホストの時間を進める
+
 	}
 
-	// Write buffer to WAV file
+
+
+	// --- ループ終了後 ---
+
+	// MIDI Note Off の送信も不要
+
+
+
+	// WAVファイルへの書き込み
+
 	if err := encoder.Write(intBuf); err != nil {
+
 		return fmt.Errorf("failed to write wav data: %w", err)
+
 	}
+
+
 
 	fmt.Printf("Audio successfully written to %s\n", path)
+
 	return nil
+
 }
 
 func vstiPlaginRunner(host2vstiMessageChan chan string, vst *vst2.VST, plugin *vst2.Plugin, opcode map[string]int) {
@@ -202,7 +291,14 @@ func vstiPlaginRunner(host2vstiMessageChan chan string, vst *vst2.VST, plugin *v
 	var msg MSG
 	loopcnt := 0
 
+	// Plugin lifecycle management moved from main
+	plugin.Start()
+	plugin.Dispatch(vst2.PluginOpcode(opcode["plugStateChanged"]), 0, 0, nil, 0)
+	plugin.Resume() // Resume plugin for processing
+
 	for {
+		//println("loop",loopcnt)
+
 		loopcnt++
 		if loopcnt > 823901 {
 			loopcnt = 0
@@ -229,30 +325,30 @@ func vstiPlaginRunner(host2vstiMessageChan chan string, vst *vst2.VST, plugin *v
 
 		}
 
-		var msgFromHost []string
-		println("get msg", loopcnt)
-		// if len(msgFromHost) <= 0 {
-		// 	println("contenyu-")
-		// 	continue
-		// }
+		var value string
+		var ok bool
 		select {
-		case value, ok := <-host2vstiMessageChan:
-			if ok {
-				fmt.Println("値を取得しました:", value)
-				msgFromHost = strings.SplitN(value, ":", 2)
-			} else {
+		case value, ok = <-host2vstiMessageChan:
+			if !ok {
 				fmt.Println("チャネルは閉じられています。ループ終了。")
-				return // クローズされたらループを抜ける
+				return //クローズされたらループを抜ける
 			}
+			fmt.Println("メッセージを受信しました:", value)
 		default:
-			// データがなかった場合、少し待機してから次のループへ
-			//fmt.Println("データなし。少し待機してコンティニュー...")
-			//time.Sleep(100 * time.Millisecond) // ここで意図的に待機
+			// メッセージがない場合は、GUIの処理に集中し、CPUの過剰な使用を防ぎます
+			if !is_openWindow {
+				//time.Sleep(10 * time.Millisecond)
+			}
 			continue
 		}
 
-		println("prosess msg")
-		switch msgFromHost[0] {
+		// メッセージをコマンドと引数に分割します
+
+		println("メッセージを処理中: ", value)
+		msgFromHost := strings.SplitN(value, ":", 2)
+		command := msgFromHost[0]
+
+		switch command {
 		case "loadFXB":
 			if len(msgFromHost) >= 2 && msgFromHost[1] != "" {
 				fmt.Println("Loading .fxb:", msgFromHost[1])
@@ -266,7 +362,7 @@ func vstiPlaginRunner(host2vstiMessageChan chan string, vst *vst2.VST, plugin *v
 				time.Sleep(200 * time.Millisecond)
 
 				fmt.Println("Bank set:", msgFromHost[1], "size", len(data))
-				plugin.Suspend() // Suspend after setting data if not opening GUI
+				// plugin.Suspend() // GUIを開くかもしれないので、ここではサスペンドしない方が良いかもしれません
 			}
 
 		case "openGUI":
@@ -277,11 +373,27 @@ func vstiPlaginRunner(host2vstiMessageChan chan string, vst *vst2.VST, plugin *v
 			time.Sleep(200 * time.Millisecond)
 
 		case "saveFXB":
-			if err := SaveFXB(plugin, msgFromHost[1]); err != nil {
-				log.Fatalf("Failed to save FXB file: %v", err)
+			if len(msgFromHost) >= 2 && msgFromHost[1] != "" {
+				if err := SaveFXB(plugin, msgFromHost[1]); err != nil {
+					log.Fatalf("Failed to save FXB file: %v", err)
+				}
+			}
+		case "processWAV":
+			if len(msgFromHost) >= 2 {
+				msgFromHostSaveWav := strings.SplitN(msgFromHost[1], ":", 2) ///パスと時間を分離
+				wavPath := msgFromHostSaveWav[1]
+				durationStr := msgFromHostSaveWav[0]
+				duration, err := time.ParseDuration(durationStr)
+				if err != nil {
+					log.Printf("無効なdurationです: %v", err)
+				} else {
+					if err := processAndSaveWav(plugin, wavPath, duration); err != nil {
+						log.Printf("WAVの処理と保存に失敗しました: %v", err)
+					}
+				}
 			}
 		case "vstiexit":
-			break
+			return // forループを抜けてゴルーチンを終了します
 		}
 	}
 
@@ -351,8 +463,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to load plugin: %v", err)
 	}
-	plugin.Start()
-	plugin.Dispatch(vst2.PluginOpcode(opcodes["plugStateChanged"]), 0, 0, nil, 0)
 	defer vst.Close()
 	defer plugin.Close()
 	time.Sleep(200 * time.Millisecond)
@@ -396,7 +506,7 @@ func main() {
 	// Process and save WAV if requested
 	if outputWavPath != "" {
 		// Send a message to the plugin runner goroutine to handle WAV processing safely.
-		wavMsg := fmt.Sprintf("processWAV:%s:%s", outputWavPath, duration.String())
+		wavMsg := fmt.Sprintf("processWAV:%s:%s", duration.String(), outputWavPath)
 		host2vstiMessageChan <- wavMsg
 		println(wavMsg)
 	}

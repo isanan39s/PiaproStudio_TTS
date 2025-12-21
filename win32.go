@@ -165,9 +165,9 @@ func OpenPluginGUIWithWindow(plugin *vst2.Plugin, opcodes map[string]int) error 
 	}
 	fmt.Println("created window hwnd:", hwnd)
 
-	// プラグインを実行状態にする（GUI 開く前に必須）
-	plugin.Start()
-	plugin.Resume()
+	// プラグインの実行状態の管理は vstiPlaginRunner ゴルーチンで行うため、ここでは行いません。
+	// plugin.Start()
+	// plugin.Resume()
 	plugin.Dispatch(vst2.PluginOpcode(opcodes["plugStateChanged"]), 0, 0, nil, 0)
 
 	// call PlugEditOpen with parent HWND
