@@ -2,11 +2,12 @@ package main
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"io/ioutil"
-	"log"
-	"strings"
-	"time"
+	//"log"
+	//"strings"
+	//"time"
 	"unsafe"
 
 	"pipelined.dev/audio/vst2"
@@ -22,7 +23,7 @@ func hostCallback(op vst2.HostOpcode, index int32, value int64, ptr unsafe.Point
 	case vst2.HostGetSampleRate:
 		return int64(48000)
 	case vst2.HostGetBufferSize:
-		return int64(512)
+		return int64(1024) // バッファサイズを512から1024に変更
 	case vst2.HostGetCurrentProcessLevel:
 		return int64(0)
 	case vst2.HostGetTime:
@@ -142,107 +143,69 @@ func SaveFXB(plugin *vst2.Plugin, path string) error {
 	return nil
 }
 
-func vstiPlaginRunner(host2vstiMessageChan chan string, vst *vst2.VST, plugin *vst2.Plugin, opcode map[string]int) {
+func vstiPlaginRunner(vst *vst2.VST, plugin *vst2.Plugin, opcode map[string]int, buf_chan chan []byte, startProcessing chan struct{}) {
 	println("start plagin thead")
-	is_openWindow := false
-	var msg MSG
-	loopcnt := 0
-
+	
 	// Pluginをいつでも動かせるように
-	plugin.Start()
-	plugin.Dispatch(vst2.PluginOpcode(opcode["plugStateChanged"]), 0, 0, nil, 0)
-	plugin.Resume() // Resume plugin for processing
-	plugin.SetBufferSize(int(hostCallback(vst2.HostGetBufferSize, 0, 0, nil, 0)))
+	println("VST-DISPATCH-ENTRY: cmd=0 (plugOpen)")
+	plugin.Start() // Corresponds to plugOpen (0)
+	println("VST-DISPATCH-EXIT: cmd=0 result=0") // VstPlugin.cppのVstPlugin::open()の戻り値を模倣
+
+	println("VST-DISPATCH-ENTRY: cmd=12 (plugStateChanged)")
+	plugin.Dispatch(vst2.PluginOpcode(opcode["plugStateChanged"]), 0, 0, nil, 0) // Corresponds to plugStateChanged (12)
+	println("VST-DISPATCH-EXIT: cmd=12 result=0") // VstPlugin.cppの戻り値を模倣
+
+	plugin.Resume() // Resume plugin for processing (corresponds to effMainsChanged 1)
+	
+	// Plugin SetBufferSize: ホストのバッファサイズを設定
+	bufSize := int(hostCallback(vst2.HostGetBufferSize, 0, 0, nil, 0)) // hostCallbackはすでに1024を返す
+	println("Plugin SetBufferSize:", bufSize)
+	println("VST-DISPATCH-ENTRY: cmd=11 (plugSetBufferSize) param2=", bufSize)
+	plugin.SetBufferSize(bufSize)
+	println("VST-DISPATCH-EXIT: cmd=11 result=0") // VstPlugin.cppの戻り値を模倣
+	
+	samplesToProcess := bufSize // hostCallbackから取得したバッファサイズを使用
+	channelCount := 2 // 固定のチャンネル数
+
+	in := vst2.NewFloatBuffer(channelCount, samplesToProcess)
+	out := vst2.NewFloatBuffer(channelCount, samplesToProcess)
+	defer in.Free()
+	defer out.Free()
 
 	defer println("さいなら")
 
+	// mainゴルーチンからの開始指示を待つ
+	<-startProcessing 
+	println("Audio processing started by main goroutine.")
+
+	loopcnt := 0
 	for {
-		//println("loop",loopcnt)///動作確認用
 		loopcnt++
-		if loopcnt > 823901 {
+		if loopcnt > 823901 { // オーバーフロー防止
 			loopcnt = 0
 		}
+		//println("loop", loopcnt) ///動作確認用
 
-		if is_openWindow {
-			// PeekMessage: ノンブロッキングでメッセージをチェック 多分win側からのメッセージ
-			ret, _, _ := procPeekMessageW.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0, PM_REMOVE)
+		// --- オーディオ処理 ---
+		println("VST-PROCESS-ENTRY (loop:", loopcnt, ")")
+		plugin.ProcessFloat(in, out)
+		println("VST-PROCESS-EXIT")
 
-			if ret > 0 {
-				// メッセージがあれば処理
-				if msg.Message == 0x0012 { // WM_QUIT ×とかaltF4?
-					break
-				}
-				procTranslateMessage.Call(uintptr(unsafe.Pointer(&msg)))
-				procDispatchMessageW.Call(uintptr(unsafe.Pointer(&msg)))
-			} else {
-				// メッセージがなければ少し待機（CPU 負荷軽減）
+		// --- PlugEditIdleの呼び出し (LMMSの模倣) ---
+		println("VST-DISPATCH-ENTRY: cmd=19 (PlugEditIdle)")
+		plugin.Dispatch(vst2.PluginOpcode(opcode["PlugEditIdle"]), 0, 0, nil, 0)
+		println("VST-DISPATCH-EXIT: cmd=19 result=0")
+
+		// --- オーディオデータ変換と送信 ---
+		buf := make([]byte, samplesToProcess*channelCount*2) // 16bitは2バイト
+		for i := 0; i < samplesToProcess; i++ {
+			for c := 0; c < channelCount; c++ {
+				sample := out.Channel(c)[i]
+				sampleInt := int16(sample * 32767.0)
+				binary.LittleEndian.PutUint16(buf[(i*channelCount+c)*2:], uint16(sampleInt))
 			}
-			procSleep.Call(10)
-
-		} else {
-			procSleep.Call(250)
 		}
-
-		var value string
-		var ok bool
-		select {
-		case value, ok = <-host2vstiMessageChan:
-			if !ok {
-				fmt.Println("チャネルは閉じられています。ループ終了。")
-				return //クローズされたらループを抜ける
-			}
-		default:
-			if !is_openWindow {
-				time.Sleep(10 * time.Millisecond)
-			}
-			continue
-		}
-
-		// メッセージをコマンドと引数に分割します
-
-		fmt.Println("メッセージを受信しました:", value)
-		msgFromHost := strings.SplitN(value, ":", 2)
-		command := msgFromHost[0]
-
-		switch command {
-		case "loadFXB":
-			if len(msgFromHost) >= 2 && msgFromHost[1] != "" {
-				if err := loadFXB(plugin, msgFromHost[1]); err != nil {
-					log.Fatalf("Failed to load FXB file: %v", err)
-				}
-			}
-
-		case "openGUI":
-			//			time.Sleep(200 * time.Millisecond)
-			OpenPluginGUIWithWindow(plugin, opcode)
-			is_openWindow = true
-			//			time.Sleep(200 * time.Millisecond)
-			defer plugin.Dispatch(vst2.PluginOpcode(opcode["PlugEditClose"]), 0, 0, nil, 0)
-
-		case "saveFXB":
-			if len(msgFromHost) >= 2 && msgFromHost[1] != "" {
-				if err := SaveFXB(plugin, msgFromHost[1]); err != nil {
-					log.Fatalf("Failed to save FXB file: %v", err)
-				}
-			}
-		case "processWAV":
-			if len(msgFromHost) >= 2 {
-
-				parts := strings.Split(msgFromHost[1], ":")
-				durationStr := parts[0]
-				duration, err := time.ParseDuration(durationStr)
-				if err != nil {
-					log.Printf("無効なdurationです: %v", err)
-				} else {
-					// Call the new realtime playback function
-					if err := playRealtime(plugin, duration); err != nil {
-						log.Printf("リアルタイム再生に失敗しました: %v", err)
-					}
-				}
-			}
-		case "vstiexit":
-			return // forループを抜けてゴルーチンを終了します
-		}
+		
+		buf_chan <- buf // 処理済みバッファを再生側に送信
 	}
-
 }
