@@ -9,7 +9,11 @@ require (
 
 require (
 	github.com/ebitengine/purego v0.4.1 // indirect
+	github.com/go-audio/audio v1.0.0 // indirect
+	github.com/go-audio/riff v1.0.0 // indirect
+	github.com/go-audio/wav v1.0.0 // indirect
 	golang.org/x/sys v0.7.0 // indirect
+	pipelined.dev/audio/wav v0.6.1 // indirect
 	pipelined.dev/pipe v0.11.0 // indirect
 	pipelined.dev/signal v0.10.0 // indirect
 )
