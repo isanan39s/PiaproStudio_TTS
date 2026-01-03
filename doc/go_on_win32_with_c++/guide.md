@@ -28,7 +28,7 @@ cgoはGoプログラムがCのコードを直接呼び出すための仕組み�
 1. C++側のコードを作成
   *  ウィンドウの生成とメッセージループを処理するC++コードです。Goから呼び出すためのShowWindowFromGoという関数をextern "C"で公開しています。
 	
-```c++:window.cpp
+```c++ : window.cpp
 // .cpp
 #include <windows.h>
 
@@ -89,7 +89,7 @@ __declspec(dllexport) void ShowWindowFromGo() {
 2. Go側のコード (main.go)
   Goのメインプログラムです。cgoを使ってwindow.dllを読み込み、ShowWindowFromGo関数を呼び出します。
 
-```go:main.go
+```go : main.go
  // main.go
  package main
  
