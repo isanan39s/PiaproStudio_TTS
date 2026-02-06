@@ -1,16 +1,16 @@
 package main
 
 import (
-	"bufio"
-	"fmt"
-	"io" // io.Pipeのために追加
+	// "bufio"
+	// "fmt"
+	// "io" // io.Pipeのために追加
 	"log"
 	"os"
 	"strconv"
 	"strings"
-	"time"
+	// "time"
 
-	"github.com/hajimehoshi/oto/v2" // otoライブラリのために追加
+	// "github.com/hajimehoshi/oto/v2" // otoライブラリのために追加
 	"pipelined.dev/audio/vst2"
 )
 
@@ -45,11 +45,11 @@ func main() {
 			}
 		case "--duration":
 			if i+1 < len(os.Args) {
-				d, err := strconv.Atoi(os.Args[i+1])
+				_, err := strconv.Atoi(os.Args[i+1])
 				if err != nil {
 					log.Fatalf("invalid duration: %v", err)
 				}
-				duration = time.Duration(d) * time.Second
+				// duration = time.Duration(d) * time.Second
 				i++ // 値を消費
 			} else {
 				log.Fatal("--duration requires a number of seconds")
@@ -63,5 +63,18 @@ func main() {
 		}
 	}
 
+	_=savePath
+	_=loadPath
+	_=openGUI
+
+
+	endchan:=make(chan struct{})
+
+	go func() {
+		
+		UIthread(endchan)
+	}()
+
+	<-endchan
 	
 }

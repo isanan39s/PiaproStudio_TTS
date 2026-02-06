@@ -2,15 +2,15 @@ package main
 
 import (
 	"bytes"
-	"encoding/binary"
+	// "encoding/binary"
 	"fmt"
-	"io/ioutil"
+	// "io/ioutil"
 
-	"io"
+	// "io"
 	"unsafe"
 
 	"pipelined.dev/audio/vst2"
-	"strings"
+	// "strings"
 )
 
 // / vstiからの問い合わせに対する応答
