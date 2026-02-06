@@ -155,8 +155,9 @@ func runMessageLoop(done chan struct{}) {
 	close(done)
 }
 
-// OpenPluginGUIWithWindow creates a Win32 window, opens the plugin editor with that window as parent,
-// runs a message loop in a goroutine, waits for Enter on stdin, then closes the editor.
+// OpenPluginGUIWithWindow win32ウィンドウを作り, opens the plugin editor with that window as parent,
+//
+//	プラグインgoroutineから呼ぶ, waits for Enter on stdin, で閉じる.
 func OpenPluginGUIWithWindow(plugin *vst2.Plugin, opcodes map[string]int) error {
 	fmt.Println("create window")
 	hwnd, err := createWin32Window("VST Plugin Host Window")
@@ -165,12 +166,9 @@ func OpenPluginGUIWithWindow(plugin *vst2.Plugin, opcodes map[string]int) error 
 	}
 	fmt.Println("created window hwnd:", hwnd)
 
-	// プラグインの実行状態の管理は vstiPlaginRunner ゴルーチンで行うため、ここでは行いません。
-	// plugin.Start()
-	// plugin.Resume()
 	plugin.Dispatch(vst2.PluginOpcode(opcodes["plugStateChanged"]), 0, 0, nil, 0)
 
-	// call PlugEditOpen with parent HWND
+	// PlugEditOpen呼ぶ HWNDで
 	fmt.Println("open window")
 	plugin.Dispatch(vst2.PluginOpcode(opcodes["PlugEditOpen"]), 0, 0, unsafe.Pointer(uintptr(hwnd)), 0)
 	fmt.Println(" PlugEditOpen dispatched (parent HWND passed)")
