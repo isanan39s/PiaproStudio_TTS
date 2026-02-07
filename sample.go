@@ -69,12 +69,18 @@ func main() {
 
 
 	endchan:=make(chan struct{})
+	msgchan:=make(chan MsgBus)
 
 	go func() {
 		
-		UIthread(endchan)
+		UIthread(endchan,msgchan)
 	}()
 
 	<-endchan
 	
+}
+
+type MsgBus struct {
+    cmd    string
+    option []string
 }

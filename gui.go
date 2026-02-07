@@ -16,7 +16,7 @@ type MyMainWindow struct{
 }
 
 
-func UIthread(endchan chan struct{}){
+func UIthread(endchan chan struct{},msgchan chan MsgBus){
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
