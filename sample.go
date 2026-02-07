@@ -63,24 +63,23 @@ func main() {
 		}
 	}
 
-	_=savePath
-	_=loadPath
-	_=openGUI
+	_ = savePath
+	_ = loadPath
+	_ = openGUI
 
-
-	endchan:=make(chan struct{})
-	msgchan:=make(chan MsgBus)
+	endchan := make(chan struct{})
+	msgchan := make(chan MsgBus)
 
 	go func() {
-		
-		UIthread(endchan,msgchan)
+
+		UIthread(endchan, msgchan)
 	}()
 
 	<-endchan
-	
+
 }
 
 type MsgBus struct {
-    cmd    string
-    option []string
+	cmd    string
+	option []string
 }

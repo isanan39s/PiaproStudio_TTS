@@ -125,7 +125,3 @@ func loadPlagin(path string) (*vst2.VST, *vst2.Plugin, map[string]int, error) {
 	println("return")
 	return vst, plugin, opcodes, nil
 }
-
-
-
-
