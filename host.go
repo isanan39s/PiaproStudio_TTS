@@ -4,14 +4,18 @@ import (
 	"bytes"
 	// "encoding/binary"
 	"fmt"
-	// "io/ioutil"
 
-	// "io"
+	"os"
+
 	"unsafe"
 
 	"pipelined.dev/audio/vst2"
 	// "strings"
 )
+
+var vsti *vst2.VST
+var plugin *vst2.Plugin
+var opcodes map[string]int
 
 // / vstiからの問い合わせに対する応答
 // デバッグ版 hostCallback: どの opcode でクラッシュするか特定用
@@ -81,20 +85,21 @@ func hostCallback(op vst2.HostOpcode, index int32, value int64, ptr unsafe.Point
 func loadPlagin(path string) (*vst2.VST, *vst2.Plugin, map[string]int, error) {
 	fmt.Printf(" VST2 プラグインをロード中: %s\n", path)
 
-	vst, err := vst2.Open(path)
+	var err error
+	vsti, err = vst2.Open(path)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
 	hostCallbackFunc := hostCallback
-	plugin := vst.Plugin(hostCallbackFunc)
+	plugin = vsti.Plugin(hostCallbackFunc)
 	if plugin == nil {
 		return nil, nil, nil, fmt.Errorf("plugin instance creation failed")
 	}
 
-	name := vst.Name
+	name := vsti.Name
 	numParams := plugin.NumParams()
-	var opcodes map[string]int = make(map[string]int)
+	opcodes = make(map[string]int)
 
 	// opcode マップ構築とベンダー取得
 	vendor := "unknown"
@@ -123,5 +128,41 @@ func loadPlagin(path string) (*vst2.VST, *vst2.Plugin, map[string]int, error) {
 		}
 	}
 	println("return")
-	return vst, plugin, opcodes, nil
+	return vsti, plugin, opcodes, nil
+}
+
+func vstPlaginThrad(endchan chan struct{}, msgchan chan MsgBus) {
+	defer close(endchan)
+	go func() {
+		for rsvMsg := range msgchan {
+			switch rsvMsg.cmd {
+			case "VSTiTh.close":
+
+			case "VSTiTH.loadFXB":
+				path := rsvMsg.option[0]
+				///読み込み＆etc
+				data, err := os.ReadFile(path)
+				if err != nil {
+					return
+				}
+
+				plugin.SetBankData(data) ///本体 あとはファイルからの読み出し
+
+			}
+
+		}
+	}()
+	///メインのこーど
+}
+
+func openGUI(hwnd uintptr) error {
+	///トド岩:周辺コード
+	plugin.Dispatch(vst2.PluginOpcode(opcodes["PlugEditOpen"]), 0, 0, unsafe.Pointer(uintptr(hwnd)), 0)
+
+}
+
+func closeGUI(hwnd uintptr) error {
+	///トド岩:周辺コード
+	plugin.Dispatch(vst2.PluginOpcode(opcodes["PlugEditClose"]), 0, 0, nil, 0)
+
 }

@@ -30,6 +30,7 @@ func UIthread(endchan chan struct{}, msgchan chan MsgBus) {
 					///終了処理も呼ぶ
 				})
 			}
+
 		}
 
 	}()
