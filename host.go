@@ -166,3 +166,5 @@ func closeGUI(hwnd uintptr) error {
 	plugin.Dispatch(vst2.PluginOpcode(opcodes["PlugEditClose"]), 0, 0, nil, 0)
 
 }
+
+///todo:レシーバーでクラスもどき
