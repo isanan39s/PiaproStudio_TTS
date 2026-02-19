@@ -133,14 +133,14 @@ func (vsthost *VSTHost) loadPlugin(path string) error {
 	return nil
 }
 
-func vstPlaginThrad(endchan chan struct{}, msgchan chan MsgBus) {
+func VSTPlaginThrad(endchan chan struct{}, msgchan chan MsgBus) {
 	defer close(endchan)
 	go func() {
 		for rsvMsg := range msgchan {
 			switch rsvMsg.cmd {
 			case "VSTiTh.close":
 
-			case "VSTiTH.loadFXB":
+			case "VSTiTh.loadFXB":
 				path := rsvMsg.option[0]
 				///読み込み＆etc
 				data, err := os.ReadFile(path)
@@ -148,7 +148,7 @@ func vstPlaginThrad(endchan chan struct{}, msgchan chan MsgBus) {
 					return
 				}
 
-				plugin.SetBankData(data) ///本体 あとはファイルからの読み出し
+				vsthost.plugin.SetBankData(data) ///本体 あとはファイルからの読み出し
 
 			}
 

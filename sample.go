@@ -67,15 +67,15 @@ func main() {
 	_ = loadPath
 	_ = openGUI
 
-	endchan := make(chan struct{})
+	UIendchan := make(chan struct{})
+	VSTendchan := make(chan struct{})
 	msgchan := make(chan MsgBus)
 
-	go func() {
+	go func() { UIthread(UIendchan, msgchan) }()
+	go func() { VSTPlaginThrad(VSTendchan, msgchan) }()
 
-		UIthread(endchan, msgchan)
-	}()
-
-	<-endchan
+	<-UIendchan
+	<-VSTendchan
 
 }
 
