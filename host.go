@@ -13,9 +13,11 @@ import (
 	// "strings"
 )
 
-var vsti *vst2.VST
-var plugin *vst2.Plugin
-var opcodes map[string]int
+type VSTHost struct {
+	vsti    *vst2.VST
+	plugin  *vst2.Plugin
+	opcodes map[string]int
+}
 
 // / vstiからの問い合わせに対する応答
 // デバッグ版 hostCallback: どの opcode でクラッシュするか特定用
@@ -82,32 +84,32 @@ func hostCallback(op vst2.HostOpcode, index int32, value int64, ptr unsafe.Point
 }
 
 // /vsti(dll)を読み込み、起動準備と窓口を提供する
-func loadPlagin(path string) (*vst2.VST, *vst2.Plugin, map[string]int, error) {
+func (vsthost *VSTHost) loadPlugin(path string) error {
 	fmt.Printf(" VST2 プラグインをロード中: %s\n", path)
 
 	var err error
-	vsti, err = vst2.Open(path)
+	vsthost.vsti, err = vst2.Open(path)
 	if err != nil {
-		return nil, nil, nil, err
+		return err
 	}
 
 	hostCallbackFunc := hostCallback
-	plugin = vsti.Plugin(hostCallbackFunc)
-	if plugin == nil {
-		return nil, nil, nil, fmt.Errorf("plugin instance creation failed")
+	vsthost.plugin = vsthost.vsti.Plugin(hostCallbackFunc)
+	if vsthost.plugin == nil {
+		return fmt.Errorf("plugin instance creation failed")
 	}
 
-	name := vsti.Name
-	numParams := plugin.NumParams()
-	opcodes = make(map[string]int)
+	name := vsthost.vsti.Name
+	numParams := vsthost.plugin.NumParams()
+	vsthost.opcodes = make(map[string]int)
 
 	// opcode マップ構築とベンダー取得
 	vendor := "unknown"
 	for i := 0; i < 6000; i++ {
-		opcodes[vst2.PluginOpcode(i).String()] = i
+		vsthost.opcodes[vst2.PluginOpcode(i).String()] = i
 		if vst2.PluginOpcode(i).String() == "plugGetVendorString" || vst2.PluginOpcode(i).String() == "PlugGetVendorString" {
 			var buf [1024]byte
-			plugin.Dispatch(vst2.PluginOpcode(i), 0, 0, unsafe.Pointer(&buf[0]), 0) ///opcodeを用いた操作の例
+			vsthost.plugin.Dispatch(vst2.PluginOpcode(i), 0, 0, unsafe.Pointer(&buf[0]), 0) ///opcodeを用いた操作の例
 			vendor = string(bytes.TrimRight(buf[:], "\x00"))
 			break
 		}
@@ -118,17 +120,17 @@ func loadPlagin(path string) (*vst2.VST, *vst2.Plugin, map[string]int, error) {
 	fmt.Printf("   プラグイン名: %s\n", name)
 	fmt.Printf("   ベンダー名: %s\n", vendor)
 	fmt.Printf("   パラメータ数: %d\n", numParams)
-	fmt.Println("   opcode :", opcodes)
+	fmt.Println("   opcode :", vsthost.opcodes)
 	fmt.Println("---------------------------------------")
 
 	if numParams > 0 {
 		fmt.Println("パラメータ一覧:")
 		for i := 0; i < numParams; i++ {
-			fmt.Printf("  %d: %s\n", i, plugin.ParamName(i))
+			fmt.Printf("  %d: %s\n", i, vsthost.plugin.ParamName(i))
 		}
 	}
 	println("return")
-	return vsti, plugin, opcodes, nil
+	return nil
 }
 
 func vstPlaginThrad(endchan chan struct{}, msgchan chan MsgBus) {
