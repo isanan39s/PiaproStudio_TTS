@@ -1,24 +1,17 @@
 package main
 
 import (
-	// "bufio"
-	// "fmt"
-	// "io" // io.Pipeのために追加
 	"log"
 	"os"
+	"pipelined.dev/audio/vst2"
 	"strconv"
 	"strings"
-	// "time"
-
-	// "github.com/hajimehoshi/oto/v2" // otoライブラリのために追加
-	"pipelined.dev/audio/vst2"
 )
 
-var (
-	hostCurrentSample  int64         // ホストコールバック用のグローバルサンプルカウンター
-	hostTimeInfo       vst2.TimeInfo // プラグインに安定したポインタを渡すためのグローバルなTimeInfo構造体
-	isTransportPlaying bool          // トランスポートの状態を制御するグローバルフラグ
-)
+// var (
+// 	hostCurrentSample int64         // ホストコールバック用のグローバルサンプルカウンター
+// 	hostTimeInfo      vst2.TimeInfo // プラグインに安定したポインタを渡すためのグローバルなTimeInfo構造体
+// )
 
 func main() {
 	pluginPath := "c:\\Program Files\\Vstplugins\\Piapro Studio VSTi.dll"
@@ -66,6 +59,11 @@ func main() {
 	_ = savePath
 	_ = loadPath
 	_ = openGUI
+	/*
+
+		トド岩:色々準備
+
+	*/
 
 	UIendchan := make(chan struct{})
 	VSTendchan := make(chan struct{})

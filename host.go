@@ -2,21 +2,18 @@ package main
 
 import (
 	"bytes"
-	// "encoding/binary"
 	"fmt"
-
 	"os"
-
-	"unsafe"
-
 	"pipelined.dev/audio/vst2"
-	// "strings"
+	"unsafe"
 )
 
 type VSTHost struct {
 	vsti    *vst2.VST
 	plugin  *vst2.Plugin
 	opcodes map[string]int
+
+	canLoadFXB bool ///制御 似たようなの増やす予定
 }
 
 // / vstiからの問い合わせに対する応答
@@ -135,6 +132,9 @@ func (vsthost *VSTHost) loadPlugin(path string) error {
 
 func VSTPlaginThrad(endchan chan struct{}, msgchan chan MsgBus) {
 	defer close(endchan)
+
+	vsthost := &VSTHost{}
+
 	go func() {
 		for rsvMsg := range msgchan {
 			switch rsvMsg.cmd {
@@ -147,25 +147,29 @@ func VSTPlaginThrad(endchan chan struct{}, msgchan chan MsgBus) {
 				if err != nil {
 					return
 				}
-
-				vsthost.plugin.SetBankData(data) ///本体 あとはファイルからの読み出し
+				if vsthost.canLoadFXB == true {
+					vsthost.plugin.SetBankData(data) ///本体 あとはファイルからの読み出し
+				}
 
 			}
 
 		}
 	}()
-	///メインのこーど
+	///メインのこーど 今後書く
 }
 
-func openGUI(hwnd uintptr) error {
+func (vsthost *VSTHost) openGUI(hwnd uintptr) error {
 	///トド岩:周辺コード
-	plugin.Dispatch(vst2.PluginOpcode(opcodes["PlugEditOpen"]), 0, 0, unsafe.Pointer(uintptr(hwnd)), 0)
+	vsthost.plugin.Dispatch(vst2.PluginOpcode(vsthost.opcodes["PlugEditOpen"]), 0, 0, unsafe.Pointer(uintptr(hwnd)), 0)
 
+	return nil
 }
 
-func closeGUI(hwnd uintptr) error {
+func (vsthost *VSTHost) closeGUI(hwnd uintptr) error {
 	///トド岩:周辺コード
-	plugin.Dispatch(vst2.PluginOpcode(opcodes["PlugEditClose"]), 0, 0, nil, 0)
+	vsthost.plugin.Dispatch(vst2.PluginOpcode(vsthost.opcodes["PlugEditClose"]), 0, 0, nil, 0)
+
+	return nil
 
 }
 
