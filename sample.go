@@ -64,20 +64,28 @@ func main() {
 		トド岩:色々準備
 
 	*/
+	
 
-	UIendchan := make(chan struct{})
+		UIendchan := make(chan struct{})
 	VSTendchan := make(chan struct{})
-	msgchan := make(chan MsgBus)
+	endchan:=make(chan struct{})
 
-	go func() { UIthread(UIendchan, msgchan) }()
-	go func() { VSTPlaginThrad(VSTendchan, msgchan) }()
+	msgchan := make(chan MsgBus)//　スレからHQ
+	hq:=BusHQ(msgchan,endchan)
+
+	UIChan:=make(chan MsgBus)// HQからスレ
+	VSTChan:=make(chan MsgBus)// HQからスレ
+	hq.registAddr("GUI",UIChan)
+	hq.registAddr("VSTiTh",VSTChan)
+
+
+
+
+
+	go func() { UIthread(UIendchan,UIChan,msgchan) }()
+	go func() { VSTPlaginThrad(VSTendchan,VSTChan,msgchan) }()
 
 	<-UIendchan
 	<-VSTendchan
 
-}
-
-type MsgBus struct {
-	cmd    string
-	option []string
 }

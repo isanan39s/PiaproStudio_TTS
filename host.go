@@ -19,6 +19,11 @@ type VSTHost struct {
 	canLoadFXB bool ///制御 似たようなの増やす予定
 }
 
+type VSTWindowSize struct {
+	wide  int
+	hight int
+}
+
 // / vstiからの問い合わせに対する応答
 // デバッグ版 hostCallback: どの opcode でクラッシュするか特定用
 func (vsthost *VSTHost) hostCallback(op vst2.HostOpcode, index int32, value int64, ptr unsafe.Pointer, opt float32) int64 {
@@ -136,18 +141,18 @@ func (vsthost *VSTHost) loadPlugin(path string) error {
 	return nil
 }
 
-func VSTPlaginThrad(endchan chan struct{}, msgchan chan MsgBus) {
+func VSTPlaginThrad(endchan chan struct{}, rsvchan chan MsgBus, sndchan chan MsgBus) {
 	defer close(endchan)
 
 	vsthost := &VSTHost{}
 
 	go func() {
-		for rsvMsg := range msgchan {
-			switch rsvMsg.cmd {
+		for rsvMsg := range rsvchan {
+			switch rsvMsg.Cmd {
 			case "VSTiTh.close":
 
 			case "VSTiTh.loadFXB":
-				path := rsvMsg.option[0]
+				path := rsvMsg.Option[0]
 				///読み込み＆etc
 				data, err := os.ReadFile(path)
 				if err != nil {

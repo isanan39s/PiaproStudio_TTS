@@ -11,9 +11,10 @@ import (
 
 type MyMainWindow struct {
 	*walk.MainWindow
+	childWin4Vst *walk.Composite
 }
 
-func UIthread(endchan chan struct{}, msgchan chan MsgBus) {
+func UIthread(endchan chan struct{}, rsvchan chan MsgBus,snd) {
 
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -22,8 +23,8 @@ func UIthread(endchan chan struct{}, msgchan chan MsgBus) {
 
 	go func() {
 
-		for rsvMsg := range msgchan {
-			switch rsvMsg.cmd {
+		for rsvMsg := range rsvchan {
+			switch rsvMsg.Cmd {
 			case "GUI.close":
 				mw.Synchronize(func() {
 					mw.Close()
@@ -42,9 +43,24 @@ func UIthread(endchan chan struct{}, msgchan chan MsgBus) {
 		Size:   Size{640, 480},
 		Layout: VBox{},
 
+
+		MenuItems: []MenuItem{
+			Menu{
+				Text: "ファイル",
+				Items: []MenuItem{
+					Action{
+						Text:        "終了",
+						OnTriggered: func() { mw.Close() },
+					},
+				},
+			},
+		},
+
 		Children: []Widget{
-			Label{
-				Text: "test",
+			Composite{
+				AssignTo:        &mw.childWin4Vst,
+				Layout:          nil,
+				DoubleBuffering: true,
 			},
 		},
 	}).Run(); err != nil {
