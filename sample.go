@@ -3,7 +3,7 @@ package main
 import (
 	"log"
 	"os"
-	"pipelined.dev/audio/vst2"
+	//"pipelined.dev/audio/vst2"
 	"strconv"
 	"strings"
 )
