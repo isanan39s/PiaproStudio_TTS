@@ -13,12 +13,15 @@ type VSTHost struct {
 	plugin  *vst2.Plugin
 	opcodes map[string]int
 
+	hostCurrentSample int64         // ホストコールバック用のグローバルサンプルカウンター
+	hostTimeInfo      vst2.TimeInfo // プラグインに安定したポインタを渡すためのグローバルなTimeInfo構造体
+
 	canLoadFXB bool ///制御 似たようなの増やす予定
 }
 
 // / vstiからの問い合わせに対する応答
 // デバッグ版 hostCallback: どの opcode でクラッシュするか特定用
-func hostCallback(op vst2.HostOpcode, index int32, value int64, ptr unsafe.Pointer, opt float32) int64 {
+func (vsthost *VSTHost) hostCallback(op vst2.HostOpcode, index int32, value int64, ptr unsafe.Pointer, opt float32) int64 {
 	fmt.Printf("[hostCallback] opcode=%v (%d) index=%d value=%d\n", op, op, index, value)
 	switch op {
 	case vst2.HostGetVendorVersion:
@@ -43,15 +46,15 @@ func hostCallback(op vst2.HostOpcode, index int32, value int64, ptr unsafe.Point
 		// プラグインに詳細なTimeInfo構造体を渡す
 		// Piapro Studioが正しく機能するためには、音楽的な文脈（テンポ、拍子、小節）が必要
 		samplesPerBeat := (sampleRate * 60.0) / tempo
-		currentPpq := float64(hostCurrentSample) / samplesPerBeat
+		currentPpq := float64(vsthost.hostCurrentSample) / samplesPerBeat
 
 		// 簡易的な小節開始位置の計算 (4/4拍子の場合)
 		// 本来は拍子の変化（テンポマップ）を考慮する必要があります
 		beatsPerBar := float64(4) // TimeSigNumerator
 		barStart := float64(int(currentPpq/beatsPerBar)) * beatsPerBar
 
-		hostTimeInfo = vst2.TimeInfo{
-			SamplePos:          float64(hostCurrentSample),
+		vsthost.hostTimeInfo = vst2.TimeInfo{
+			SamplePos:          float64(vsthost.hostCurrentSample),
 			SampleRate:         sampleRate,
 			Tempo:              tempo,
 			PpqPos:             currentPpq,
@@ -64,8 +67,8 @@ func hostCallback(op vst2.HostOpcode, index int32, value int64, ptr unsafe.Point
 				vst2.TimeSigValid |
 				vst2.BarsValid,
 		}
-		println(int64(uintptr(unsafe.Pointer(&hostTimeInfo))))
-		return int64(uintptr(unsafe.Pointer(&hostTimeInfo)))
+		println(int64(uintptr(unsafe.Pointer(&vsthost.hostTimeInfo))))
+		return int64(uintptr(unsafe.Pointer(&vsthost.hostTimeInfo)))
 	case vst2.HostOpcode(6): // hostWantMidi (opcode 6)
 		return 1
 	case vst2.HostGetVendorString, vst2.HostGetProductString:
@@ -90,7 +93,10 @@ func (vsthost *VSTHost) loadPlugin(path string) error {
 		return err
 	}
 
-	hostCallbackFunc := hostCallback
+	hostCallbackFunc := func(op vst2.HostOpcode, index int32, value int64, ptr unsafe.Pointer, opt float32) int64 {
+		return vsthost.hostCallback(op, index, value, ptr, opt)
+	}
+
 	vsthost.plugin = vsthost.vsti.Plugin(hostCallbackFunc)
 	if vsthost.plugin == nil {
 		return fmt.Errorf("plugin instance creation failed")
