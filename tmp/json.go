@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -23,10 +23,10 @@ type Mora struct {
 
 // AccentPhrase はアクセント句の情報を保持します
 type AccentPhrase struct {
-	Moras  []Mora `json:"moras"`						/// 各音素
-	Accent int    `json:"accent"`		 				/// アクセント位置
+	Moras  []Mora `json:"moras"`  /// 各音素
+	Accent int    `json:"accent"` /// アクセント位置
 	//PauseMora       *Mora  `json:"pause_mora"`       	/// アクセント句の末尾につく無音モーラ
-	IsInterrogative bool `json:"is_interrogative"` 		/// ?か tなら語尾上げる？
+	IsInterrogative bool `json:"is_interrogative"` /// ?か tなら語尾上げる？
 }
 
 // ResponseData は全体のレスポンス構造を保持します
@@ -39,13 +39,15 @@ type ResponseData struct {
 }
 
 var g_httpClient = &http.Client{}
+
 // 任意の文字列に変えるターゲット
 const targetText = "ﾐｸｻﾝｶﾜｲｲﾔｯﾀｰ"
-// const targetText = "Hello World!" 
+
+// const targetText = "Hello World!"
 // const targetText = "テストテスト"
 
-func get_Accents(text string)string{
-// ベースURLを定義
+func get_Accents(text string) string {
+	// ベースURLを定義
 	baseURL := "http://localhost:50021/audio_query"
 
 	// クエリパラメータを構築(モーラ取得)
@@ -87,16 +89,15 @@ func get_Accents(text string)string{
 
 }
 
-
 func main_a() {
-	text:=targetText
+	text := targetText
 	if len(os.Args) >= 2 {
-		text=os.Args[1]
+		text = os.Args[1]
 	}
 
-	responseBody:=get_Accents(text)
+	responseBody := get_Accents(text)
 	var data ResponseData
-	err:= json.Unmarshal([]byte(responseBody), &data)
+	err := json.Unmarshal([]byte(responseBody), &data)
 	if err != nil {
 		fmt.Println("Error unmarshalling JSON:", err)
 		return
@@ -111,30 +112,28 @@ func main_a() {
 	}
 }
 
-
 func sendMessage(messages chan string) {
-    messages <- "彗星のごとく現れたスターの原石！アイドルVTuberの星街すいせいです！！" // メッセージを送る
-    time.Sleep(time.Second)
-    messages <- "すいちゃんは～？" // もう一つメッセージを送る
-    time.Sleep(time.Second)
-    messages <- "今日もかわいいー！" // さらにもう一つメッセージを送る
+	messages <- "彗星のごとく現れたスターの原石！アイドルVTuberの星街すいせいです！！" // メッセージを送る
+	time.Sleep(time.Second)
+	messages <- "すいちゃんは～？" // もう一つメッセージを送る
+	time.Sleep(time.Second)
+	messages <- "今日もかわいいー！" // さらにもう一つメッセージを送る
 }
 
 // 星詠みがメッセージを受け取る関数
 func receiveMessage(messages chan string) {
-    for i := 0; i < 3; i++ {
-        msg := <-messages // メッセージを受け取る
-        fmt.Println("星詠み:", msg)
-    }
+	for i := 0; i < 3; i++ {
+		msg := <-messages // メッセージを受け取る
+		fmt.Println("星詠み:", msg)
+	}
 }
 
-func main() {
-    messages := make(chan string, 3) // バッファ付きチャネルを作成
+func mainmain() {
+	messages := make(chan string, 3) // バッファ付きチャネルを作成
 
-    go sendMessage(messages)  // 星街すいせいgoroutineをスタート
-    go receiveMessage(messages) // 星詠みgoroutineをスタート
+	go sendMessage(messages)    // 星街すいせいgoroutineをスタート
+	go receiveMessage(messages) // 星詠みgoroutineをスタート
 
-    // goroutineが終わるのを少し待つ
-    time.Sleep(3 * time.Second)
+	// goroutineが終わるのを少し待つ
+	time.Sleep(3 * time.Second)
 }
-

@@ -17,6 +17,7 @@ func main() {
 	pluginPath := "c:\\Program Files\\Vstplugins\\Piapro Studio VSTi.dll"
 	var savePath, loadPath string
 	var openGUI bool
+	vsthost := &VSTHost{}
 
 	// 引数処理
 	for i := 1; i < len(os.Args); i++ {
@@ -64,26 +65,39 @@ func main() {
 		トド岩:色々準備
 
 	*/
-	
 
-		UIendchan := make(chan struct{})
+	UIendchan := make(chan struct{})
 	VSTendchan := make(chan struct{})
-	endchan:=make(chan struct{})
+	endchan := make(chan struct{})
 
-	msgchan := make(chan MsgBus)//　スレからHQ
-	hq:=BusHQ(msgchan,endchan)
+	msgchan := make(chan MsgBus) //　スレからHQ
+	hq := BusHQ(msgchan, endchan)
 
-	UIChan:=make(chan MsgBus)// HQからスレ
-	VSTChan:=make(chan MsgBus)// HQからスレ
-	hq.registAddr("GUI",UIChan)
-	hq.registAddr("VSTiTh",VSTChan)
+	UIChan := make(chan MsgBus)  // HQからスレ
+	VSTChan := make(chan MsgBus) // HQからスレ
+	mainChan := make(chan MsgBus)
+	hq.registAddr("GUI", UIChan)
+	hq.registAddr("VSTiTh", VSTChan)
+	hq.registAddr("main", mainChan)
 
+	go func() { UIthread(UIendchan, UIChan, msgchan, vsthost) }()
+	go func() { vsthost.VSTPlaginThrad(VSTendchan, VSTChan, msgchan) }()
 
+	<-mainChan //window待機 いい感じに受信処理したい
+	msgchan <- MsgBus{
+		To:   "VSTiTh",
+		From: "main",
+		Cmd:  "VSTiTh.loadPlugin",
+		Option: []string{
+			pluginPath,
+		},
+	}
 
-
-
-	go func() { UIthread(UIendchan,UIChan,msgchan) }()
-	go func() { VSTPlaginThrad(VSTendchan,VSTChan,msgchan) }()
+	msgchan <- MsgBus{
+		To:   "GUI",
+		From: "main",
+		Cmd:  "GUI.openGUI",
+	}
 
 	<-UIendchan
 	<-VSTendchan

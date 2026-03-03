@@ -4,8 +4,9 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"pipelined.dev/audio/vst2"
 	"unsafe"
+
+	"pipelined.dev/audio/vst2"
 )
 
 type VSTHost struct {
@@ -16,7 +17,8 @@ type VSTHost struct {
 	hostCurrentSample int64         // ホストコールバック用のグローバルサンプルカウンター
 	hostTimeInfo      vst2.TimeInfo // プラグインに安定したポインタを渡すためのグローバルなTimeInfo構造体
 
-	canLoadFXB bool ///制御 似たようなの増やす予定
+	canLoadFXB     bool ///制御 似たようなの増やす予定
+	isLoadedPlagin bool
 }
 
 type VSTWindowSize struct {
@@ -90,6 +92,7 @@ func (vsthost *VSTHost) hostCallback(op vst2.HostOpcode, index int32, value int6
 
 // /vsti(dll)を読み込み、起動準備と窓口を提供する
 func (vsthost *VSTHost) loadPlugin(path string) error {
+	vsthost.isLoadedPlagin = false
 	fmt.Printf(" VST2 プラグインをロード中: %s\n", path)
 
 	var err error
@@ -123,6 +126,14 @@ func (vsthost *VSTHost) loadPlugin(path string) error {
 		}
 	}
 
+	vsthost.plugin.SetSampleRate(48000)
+	vsthost.plugin.SetBufferSize(128)
+	vsthost.plugin.Start()
+	vsthost.plugin.Dispatch(vst2.PluginOpcode(vsthost.opcodes["plugStateChanged"]), 0, 0, nil, 0)
+	vsthost.plugin.Resume() // Resume plugin for processing
+
+	vsthost.isLoadedPlagin = true
+
 	fmt.Println("---------------------------------------")
 	fmt.Printf(" ロード成功。プラグイン情報を取得しました:\n")
 	fmt.Printf("   プラグイン名: %s\n", name)
@@ -137,15 +148,17 @@ func (vsthost *VSTHost) loadPlugin(path string) error {
 			fmt.Printf("  %d: %s\n", i, vsthost.plugin.ParamName(i))
 		}
 	}
-	println("return")
+	println("Load Plugin return")
 	return nil
 }
 
-func VSTPlaginThrad(endchan chan struct{}, rsvchan chan MsgBus, sndchan chan MsgBus) {
+func (vsthost *VSTHost) VSTPlaginThrad(endchan chan struct{}, rsvchan chan MsgBus, sndchan chan MsgBus) {
+
+	vsthost.isLoadedPlagin = false
+
 	defer close(endchan)
 
-	vsthost := &VSTHost{}
-
+	funchan := make(chan func())
 	go func() {
 		for rsvMsg := range rsvchan {
 			switch rsvMsg.Cmd {
@@ -162,25 +175,24 @@ func VSTPlaginThrad(endchan chan struct{}, rsvchan chan MsgBus, sndchan chan Msg
 					vsthost.plugin.SetBankData(data) ///本体 あとはファイルからの読み出し
 				}
 
+			case "VSTiTh.loadPlugin":
+				path := rsvMsg.Option[0]
+				funchan <- func() {
+					vsthost.loadPlugin(path)
+
+				}
+
 			}
 
 		}
 	}()
+
+	//初期化とか？
+
+	tmp := <-funchan
+	tmp()
+
 	///メインのこーど 今後書く
-}
-
-func (vsthost *VSTHost) openGUI(hwnd uintptr) error {
-	///トド岩:周辺コード
-	vsthost.plugin.Dispatch(vst2.PluginOpcode(vsthost.opcodes["PlugEditOpen"]), 0, 0, unsafe.Pointer(uintptr(hwnd)), 0)
-
-	return nil
-}
-
-func (vsthost *VSTHost) closeGUI(hwnd uintptr) error {
-	///トド岩:周辺コード
-	vsthost.plugin.Dispatch(vst2.PluginOpcode(vsthost.opcodes["PlugEditClose"]), 0, 0, nil, 0)
-
-	return nil
 
 }
 

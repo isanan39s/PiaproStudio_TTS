@@ -5,16 +5,19 @@ import (
 
 	"github.com/lxn/walk"
 	. "github.com/lxn/walk/declarative"
+	"pipelined.dev/audio/vst2"
 	"runtime"
-	// "pipelined.dev/audio/vst2"
+	"sync/atomic"
+	"unsafe"
 )
 
 type MyMainWindow struct {
 	*walk.MainWindow
 	childWin4Vst *walk.Composite
+	windowRady   atomic.Bool
 }
 
-func UIthread(endchan chan struct{}, rsvchan chan MsgBus,snd) {
+func UIthread(endchan chan struct{}, rsvchan chan MsgBus, sndchan chan MsgBus, vst *VSTHost) {
 
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -30,19 +33,31 @@ func UIthread(endchan chan struct{}, rsvchan chan MsgBus,snd) {
 					mw.Close()
 					///終了処理も呼ぶ
 				})
+
+			case "GUI.openGUI":
+				// flagsとか作ってGUIopen=trueしてもいいかも
+				for vst.isLoadedPlagin == false || mw.windowRady.Load() == false {
+				}
+				println("OK!")
+				mw.Synchronize(func() {
+					vst.plugin.Dispatch(vst2.PluginOpcode(vst.opcodes["PlugEditOpen"]), 0, 0, unsafe.Pointer(uintptr(mw.childWin4Vst.Handle())), 0)
+				})
+			case "GUI.closeGUI":
+				// flagsとか作ってGUIopen=trueしてもいいかも
+				mw.Synchronize(func() {
+					vst.plugin.Dispatch(vst2.PluginOpcode(vst.opcodes["PlugEditClose"]), 0, 0, nil, 0)
+				})
 			}
 
 		}
 
 	}()
 
-	if _, err := (MainWindow{
+	MainWindow{
 		AssignTo: &mw.MainWindow,
 		Title:    "title",
-		//size layout
-		Size:   Size{640, 480},
-		Layout: VBox{},
-
+		Size:     Size{640, 480},
+		Layout:   VBox{},
 
 		MenuItems: []MenuItem{
 			Menu{
@@ -63,9 +78,20 @@ func UIthread(endchan chan struct{}, rsvchan chan MsgBus,snd) {
 				DoubleBuffering: true,
 			},
 		},
-	}).Run(); err != nil {
+	}.Create()
+
+	mw.Show()
+	mw.windowRady.Store(true)
+	sndchan <- MsgBus{
+		To:   "main",
+		From: "GUI",
+		Cmd:  "GUI.WindowReady",
+	}
+	print("ウインドウよーい")
+	err := mw.Run()
+	if err != 0 {
 		log.Fatal(err)
 	}
-
+	print("ウインドウ止め")
 	close(endchan)
 }
