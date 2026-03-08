@@ -126,11 +126,20 @@ func (vsthost *VSTHost) loadPlugin(path string) error {
 		}
 	}
 
+	var r unsafe.Pointer
+
+
+	vsthost.plugin.Start()
+	//vsthost.plugin.Dispatch(vst2.PluginOpcode(vsthost.opcodes["plugOpen"]), 0, 0, nil, 0.0)
 	vsthost.plugin.SetSampleRate(48000)
 	vsthost.plugin.SetBufferSize(128)
-	vsthost.plugin.Start()
-	vsthost.plugin.Dispatch(vst2.PluginOpcode(vsthost.opcodes["plugStateChanged"]), 0, 0, nil, 0)
-	vsthost.plugin.Resume() // Resume plugin for processing
+	//vsthost.plugin.Dispatch(vst2.PluginOpcode(vsthost.opcodes["plugStateChanged"]), 0, 0, nil, 0)
+	vsthost.plugin.Resume()
+	//vsthost.plugin.Suspend()
+	vsthost.plugin.Dispatch(vst2.PluginOpcode(vsthost.opcodes["PlugEditGetRect"]),    0,
+    0,
+    unsafe.Pointer(&r),
+    0,)
 
 	vsthost.isLoadedPlagin = true
 
@@ -191,7 +200,8 @@ func (vsthost *VSTHost) VSTPlaginThrad(endchan chan struct{}, rsvchan chan MsgBu
 
 	tmp := <-funchan
 	tmp()
-
+	for {
+	}
 	///メインのこーど 今後書く
 
 }

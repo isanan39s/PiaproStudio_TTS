@@ -1,0 +1,9 @@
+{
+    "go.delveConfig": {
+        "debugAdapter": "dlv-dap"
+    },
+    "go.buildFlags": [
+        "-x"
+    ],
+    "go.gopath": "C:\\Users\\stsuc\\go"
+}

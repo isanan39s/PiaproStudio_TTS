@@ -80,10 +80,13 @@ func main() {
 	hq.registAddr("VSTiTh", VSTChan)
 	hq.registAddr("main", mainChan)
 
+	println("aaaaa")
+
 	go func() { UIthread(UIendchan, UIChan, msgchan, vsthost) }()
 	go func() { vsthost.VSTPlaginThrad(VSTendchan, VSTChan, msgchan) }()
 
-	<-mainChan //window待機 いい感じに受信処理したい
+	tmp:=<-mainChan //window待機 いい感じに受信処理したい
+	println(tmp.Cmd,tmp.From)
 	msgchan <- MsgBus{
 		To:   "VSTiTh",
 		From: "main",
@@ -99,7 +102,7 @@ func main() {
 		Cmd:  "GUI.openGUI",
 	}
 
-	<-UIendchan
 	<-VSTendchan
+	<-UIendchan
 
 }

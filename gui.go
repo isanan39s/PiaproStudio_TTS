@@ -38,10 +38,12 @@ func UIthread(endchan chan struct{}, rsvchan chan MsgBus, sndchan chan MsgBus, v
 				// flagsとか作ってGUIopen=trueしてもいいかも
 				for vst.isLoadedPlagin == false || mw.windowRady.Load() == false {
 				}
-				println("OK!")
 				mw.Synchronize(func() {
-					vst.plugin.Dispatch(vst2.PluginOpcode(vst.opcodes["PlugEditOpen"]), 0, 0, unsafe.Pointer(uintptr(mw.childWin4Vst.Handle())), 0)
+					println("OK!")
+					hwnd := uintptr(mw.childWin4Vst.Handle())
+					vst.plugin.Dispatch(vst2.PluginOpcode(vst.opcodes["PlugEditOpen"]), 0, 0, unsafe.Pointer(hwnd), 0)
 				})
+				println(mw.childWin4Vst.Handle())
 			case "GUI.closeGUI":
 				// flagsとか作ってGUIopen=trueしてもいいかも
 				mw.Synchronize(func() {
@@ -89,9 +91,14 @@ func UIthread(endchan chan struct{}, rsvchan chan MsgBus, sndchan chan MsgBus, v
 	}
 	print("ウインドウよーい")
 	err := mw.Run()
-	if err != 0 {
-		log.Fatal(err)
-	}
 	print("ウインドウ止め")
+
+	if err != 0 {
+		print("異常あり")
+		log.Fatal(err)
+	} else {
+		print("問題なし")
+	}
+	print("ウインドウ止めた")
 	close(endchan)
 }
