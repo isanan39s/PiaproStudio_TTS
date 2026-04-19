@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"runtime"
 	"unsafe"
 
 	"pipelined.dev/audio/vst2"
@@ -26,17 +27,23 @@ type VSTWindowSize struct {
 	hight int
 }
 
+var (
+	globalTimeInfo   vst2.TimeInfo
+	hostCallbackFunc func(op vst2.HostOpcode, index int32, value int64, ptr unsafe.Pointer, opt float32) int64
+)
+
 // / vstiからの問い合わせに対する応答
 // デバッグ版 hostCallback: どの opcode でクラッシュするか特定用
 func (vsthost *VSTHost) hostCallback(op vst2.HostOpcode, index int32, value int64, ptr unsafe.Pointer, opt float32) int64 {
-	fmt.Printf("[hostCallback] opcode=%v (%d) index=%d value=%d\n", op, op, index, value)
+	// 頻繁に呼ばれるため、デバッグ時以外はコメントアウトを推奨
+	// fmt.Printf("[hostCallback] opcode=%v (%d) index=%d value=%d\n", op, op, index, value)
 	switch op {
 	case vst2.HostGetVendorVersion:
 		return int64(1)
 	case vst2.HostGetSampleRate:
 		return int64(48000)
 	case vst2.HostGetBufferSize:
-		return int64(1024) // バッファサイズを512から1024に変更
+		return int64(128)
 	case vst2.HostGetCurrentProcessLevel:
 		/*
 			ProcessLevelUnknown (0): 不明。
@@ -44,7 +51,7 @@ func (vsthost *VSTHost) hostCallback(op vst2.HostOpcode, index int32, value int6
 			ProcessLevelRealtime (2): リアルタイムスレッド。実際のオーディオ信号処理（process / processReplacing）を行っている最中です。
 			ProcessLevelOffline (3): オフライン処理中（書き出しなど）。
 		*/
-		return int64(2)
+		return int64(1) // UI操作中は 1 を返すのが一般的です
 	case vst2.HostGetTime:
 		const (
 			sampleRate = 48000.0
@@ -56,16 +63,15 @@ func (vsthost *VSTHost) hostCallback(op vst2.HostOpcode, index int32, value int6
 		currentPpq := float64(vsthost.hostCurrentSample) / samplesPerBeat
 
 		// 簡易的な小節開始位置の計算 (4/4拍子の場合)
-		// 本来は拍子の変化（テンポマップ）を考慮する必要があります
 		beatsPerBar := float64(4) // TimeSigNumerator
 		barStart := float64(int(currentPpq/beatsPerBar)) * beatsPerBar
 
-		vsthost.hostTimeInfo = vst2.TimeInfo{
+		globalTimeInfo = vst2.TimeInfo{
 			SamplePos:          float64(vsthost.hostCurrentSample),
 			SampleRate:         sampleRate,
 			Tempo:              tempo,
 			PpqPos:             currentPpq,
-			BarStartPos:        barStart, // 修正: 0.0ではなく計算値を推奨
+			BarStartPos:        barStart,
 			TimeSigNumerator:   4,
 			TimeSigDenominator: 4,
 			Flags: vst2.TransportPlaying |
@@ -74,8 +80,9 @@ func (vsthost *VSTHost) hostCallback(op vst2.HostOpcode, index int32, value int6
 				vst2.TimeSigValid |
 				vst2.BarsValid,
 		}
-		println(int64(uintptr(unsafe.Pointer(&vsthost.hostTimeInfo))))
-		return int64(uintptr(unsafe.Pointer(&vsthost.hostTimeInfo)))
+		// グローバル変数のアドレスを返すことで、Goのスタック移動による影響を回避します
+		println(int64(uintptr(unsafe.Pointer(&globalTimeInfo))))
+		return int64(uintptr(unsafe.Pointer(&globalTimeInfo)))
 	case vst2.HostOpcode(6): // hostWantMidi (opcode 6)
 		return 1
 	case vst2.HostGetVendorString, vst2.HostGetProductString:
@@ -85,7 +92,7 @@ func (vsthost *VSTHost) hostCallback(op vst2.HostOpcode, index int32, value int6
 	case vst2.HostSizeWindow:
 		return 0
 	default:
-		fmt.Printf("[hostCallback] ⚠️ UNHANDLED opcode=%v (%d)\n", op, op) /// 例外対応
+		// fmt.Printf("[hostCallback] ⚠️ UNHANDLED opcode=%v (%d)\n", op, op) ///例外対応
 		return 0
 	}
 }
@@ -101,7 +108,8 @@ func (vsthost *VSTHost) loadPlugin(path string) error {
 		return err
 	}
 
-	hostCallbackFunc := func(op vst2.HostOpcode, index int32, value int64, ptr unsafe.Pointer, opt float32) int64 {
+	hostCallbackFunc = func(op vst2.HostOpcode, index int32, value int64, ptr unsafe.Pointer, opt float32) int64 {
+		println("hostcallback CALLD!", op, index, value, ptr, opt)
 		return vsthost.hostCallback(op, index, value, ptr, opt)
 	}
 
@@ -122,24 +130,22 @@ func (vsthost *VSTHost) loadPlugin(path string) error {
 			var buf [1024]byte
 			vsthost.plugin.Dispatch(vst2.PluginOpcode(i), 0, 0, unsafe.Pointer(&buf[0]), 0) ///opcodeを用いた操作の例
 			vendor = string(bytes.TrimRight(buf[:], "\x00"))
-			break
+
 		}
 	}
 
 	var r unsafe.Pointer
 
-
-	vsthost.plugin.Start()
 	//vsthost.plugin.Dispatch(vst2.PluginOpcode(vsthost.opcodes["plugOpen"]), 0, 0, nil, 0.0)
 	vsthost.plugin.SetSampleRate(48000)
 	vsthost.plugin.SetBufferSize(128)
 	//vsthost.plugin.Dispatch(vst2.PluginOpcode(vsthost.opcodes["plugStateChanged"]), 0, 0, nil, 0)
-	vsthost.plugin.Resume()
 	//vsthost.plugin.Suspend()
-	vsthost.plugin.Dispatch(vst2.PluginOpcode(vsthost.opcodes["PlugEditGetRect"]),    0,
-    0,
-    unsafe.Pointer(&r),
-    0,)
+	vsthost.plugin.Dispatch(vst2.PluginOpcode(vsthost.opcodes["PlugEditGetRect"]), 0,
+	0,
+	unsafe.Pointer(&r),
+	0)
+	vsthost.plugin.Start()
 
 	vsthost.isLoadedPlagin = true
 
@@ -162,9 +168,10 @@ func (vsthost *VSTHost) loadPlugin(path string) error {
 }
 
 func (vsthost *VSTHost) VSTPlaginThrad(endchan chan struct{}, rsvchan chan MsgBus, sndchan chan MsgBus) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 
 	vsthost.isLoadedPlagin = false
-
 	defer close(endchan)
 
 	funchan := make(chan func())
@@ -172,38 +179,30 @@ func (vsthost *VSTHost) VSTPlaginThrad(endchan chan struct{}, rsvchan chan MsgBu
 		for rsvMsg := range rsvchan {
 			switch rsvMsg.Cmd {
 			case "VSTiTh.close":
-
+				return
 			case "VSTiTh.loadFXB":
 				path := rsvMsg.Option[0]
-				///読み込み＆etc
 				data, err := os.ReadFile(path)
 				if err != nil {
-					return
+					continue
 				}
-				if vsthost.canLoadFXB == true {
-					vsthost.plugin.SetBankData(data) ///本体 あとはファイルからの読み出し
+				if vsthost.canLoadFXB {
+					vsthost.plugin.SetBankData(data)
 				}
-
 			case "VSTiTh.loadPlugin":
 				path := rsvMsg.Option[0]
 				funchan <- func() {
 					vsthost.loadPlugin(path)
-
 				}
-
 			}
-
 		}
 	}()
 
-	//初期化とか？
-
 	tmp := <-funchan
 	tmp()
-	for {
-	}
-	///メインのこーど 今後書く
 
+	// ここでブロックするが、CPUを消費しないようにする
+	select {}
 }
 
 ///todo:レシーバーでクラスもどき

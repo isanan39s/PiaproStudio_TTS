@@ -49,6 +49,8 @@ func BusHQ(msg chan MsgBus, endchan chan struct{}) *BusHQdat {
 func (hq *BusHQdat) sendMsg(msg MsgBus) {
 	toChan := hq.resolveAddr(msg.To)
 	if toChan != nil {
-		toChan <- msg
+		go func() {
+			toChan <- msg
+		}()
 	}
 }

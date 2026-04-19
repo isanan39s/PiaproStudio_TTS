@@ -8,7 +8,8 @@ import (
 	"pipelined.dev/audio/vst2"
 	"runtime"
 	"sync/atomic"
-	"unsafe"
+	"time"
+	//"unsafe"
 )
 
 type MyMainWindow struct {
@@ -35,17 +36,41 @@ func UIthread(endchan chan struct{}, rsvchan chan MsgBus, sndchan chan MsgBus, v
 				})
 
 			case "GUI.openGUI":
-				// flagsとか作ってGUIopen=trueしてもいいかも
-				for vst.isLoadedPlagin == false || mw.windowRady.Load() == false {
+				// プラグインのロードとウィンドウの準備ができるまで待機します
+				for !vst.isLoadedPlagin || !mw.windowRady.Load() {
+					time.Sleep(50 * time.Millisecond)
 				}
-				mw.Synchronize(func() {
-					println("OK!")
-					hwnd := uintptr(mw.childWin4Vst.Handle())
-					vst.plugin.Dispatch(vst2.PluginOpcode(vst.opcodes["PlugEditOpen"]), 0, 0, unsafe.Pointer(hwnd), 0)
-				})
-				println(mw.childWin4Vst.Handle())
+
+				sndchan <- MsgBus{
+					To:   "main",
+					From: "GUI",
+					Cmd:  "vstloadrady",
+				}
+
+				// mw.Synchronize(func() {
+				// 	println("GUIを開きます")
+				// 	hwnd := uintptr(mw.childWin4Vst.Handle())
+				// 	println("get hwnd=",hwnd)
+				// 	vst.plugin.Dispatch(vst2.PluginOpcode(vst.opcodes["PlugEditOpen"]), 0, 0, unsafe.Pointer(hwnd), 0)
+				// 	println("dispatchd!!!!")
+				// })
+				// 定期的にアイドル処理を呼ぶためのゴルーチン（GUIが開いている間）
+				go func() {
+					ticker := time.NewTicker(30 * time.Millisecond) // 少し間隔を広げて負荷を調整
+					defer ticker.Stop()
+					for range ticker.C {
+						if mw.MainWindow == nil {
+							return
+						}
+						mw.Synchronize(func() {
+							// Piapro Studio などのプラグインは、この呼び出しによって内部のGUI更新を行います
+							//vst.plugin.Dispatch(vst2.PluginOpcode(vst.opcodes["PlugEditIdle"]), 0, 0, nil, 0)
+						})
+					}
+				}()
+				println("GUIオープンコマンド送信完了")
 			case "GUI.closeGUI":
-				// flagsとか作ってGUIopen=trueしてもいいかも
+				// flagsとか作ってGUIopen=falseしてもいいかも
 				mw.Synchronize(func() {
 					vst.plugin.Dispatch(vst2.PluginOpcode(vst.opcodes["PlugEditClose"]), 0, 0, nil, 0)
 				})
