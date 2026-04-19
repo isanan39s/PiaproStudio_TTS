@@ -14,12 +14,14 @@ import (
 
 type MyMainWindow struct {
 	*walk.MainWindow
-	vstContainer *walk.CustomWidget
-	bus          *BusHQdat
-	toBus        chan MsgBus
-	closing      chan struct{}
-	dumpCount    int
-	pulgpath     string
+	vstContainer  *walk.CustomWidget
+	bus           *BusHQdat
+	plugptahLabel *walk.Label
+	statusLabel   *walk.Label // 追加: 再生位置などの表示用
+	toBus         chan MsgBus
+	closing       chan struct{}
+	dumpCount     int
+	pulgpath      string
 }
 
 func getNextDumpCount() int {
@@ -59,7 +61,8 @@ func NewGUI(bus *BusHQdat) *MyMainWindow {
 					HSplitter{
 						Children: []Widget{
 							PushButton{
-								Text: "select pluginfile",
+								Text:      "select pluginfile",
+								OnClicked: func() { mw.onSelectPlugin() },
 							},
 							PushButton{
 								Text:      "VSTをロード",
@@ -67,6 +70,11 @@ func NewGUI(bus *BusHQdat) *MyMainWindow {
 							},
 						},
 					},
+					Label{
+						Text:     mw.pulgpath,
+						AssignTo: &mw.plugptahLabel,
+					},
+					
 
 					Label{Text: "--------\r\nWave output (32bit-float)"},
 					HSplitter{
@@ -124,6 +132,11 @@ func NewGUI(bus *BusHQdat) *MyMainWindow {
 			CustomWidget{
 				AssignTo: &mw.vstContainer,
 			},
+			Label{
+						Text:     "停止中",
+						AssignTo: &mw.statusLabel,
+						Font:     Font{PointSize: 12, Bold: true},
+					},
 		},
 		MenuItems: []MenuItem{
 			Menu{
@@ -211,12 +224,13 @@ func NewGUI(bus *BusHQdat) *MyMainWindow {
 	})
 
 	go func() {
-		ticker := time.NewTicker(20 * time.Millisecond)
+		ticker := time.NewTicker(100 * time.Millisecond) // 更新頻度を 100ms に調整
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
 				mw.bus.sendMsg(MsgBus{Cmd: "idle", To: "vst_host", From: "gui"})
+				mw.bus.sendMsg(MsgBus{Cmd: "get_TimeInfo", To: "vst_host", From: "gui"}) // 位置情報を要求
 			case <-mw.closing:
 				return
 			}
@@ -231,8 +245,18 @@ func (mw *MyMainWindow) loop() {
 	for {
 		select {
 		case msg := <-mw.toBus:
-			if msg.Cmd == "plugin_loaded" {
+			switch msg.Cmd {
+			case "plugin_loaded":
 				log.Println("GUI: プラグインがロードされました")
+			case "reply_timeinfo": // ホストからの時間情報返答を処理
+				if len(msg.Option) > 0 {
+					status := msg.Option[0]
+					mw.Synchronize(func() {
+						if mw.statusLabel != nil {
+							mw.statusLabel.SetText(status)
+						}
+					})
+				}
 			}
 		case <-mw.closing:
 			return
@@ -240,27 +264,28 @@ func (mw *MyMainWindow) loop() {
 	}
 }
 
-func (mw *MyMainWindow) onSelectPlugin()error {
-dlg := new(walk.FileDialog)
-		dlg.Filter = "VST2 DLL (*.dll)|*.dll"
-		if ok, _ := dlg.ShowOpen(mw.MainWindow); ok {
-			mw.pulgpath=dlg.FilePath
-		}else{
-			return fmt.Errorf("kyannseru")
-		}
-		return nil
+func (mw *MyMainWindow) onSelectPlugin() error {
+	dlg := new(walk.FileDialog)
+	dlg.Filter = "VST2 DLL (*.dll)|*.dll"
+	if ok, _ := dlg.ShowOpen(mw.MainWindow); ok {
+		mw.pulgpath = dlg.FilePath
+		mw.plugptahLabel.SetText(mw.pulgpath)
+	} else {
+		return fmt.Errorf("kyannseru")
+	}
+	return nil
 }
 
 func (mw *MyMainWindow) onLoadPlugin() {
 	if mw.pulgpath == "" {
-		if mw.onSelectPlugin()!=nil {
+		if mw.onSelectPlugin() != nil {
 			return
 		}
 	}
-	
+
 	hwndStr := fmt.Sprintf("%x", mw.vstContainer.Handle())
 	mw.bus.sendMsg(MsgBus{Cmd: "load", To: "vst_host", From: "gui", Option: []string{mw.pulgpath, hwndStr}})
-	
+
 }
 
 func (mw *MyMainWindow) appInfo() { ///イベントハンドラ的な

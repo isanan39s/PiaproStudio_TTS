@@ -75,7 +75,7 @@ func NewVstHost(bus *BusHQdat, sync func(func())) *VstHost {
 
 func (h *VstHost) loop() {
 	for msg := range h.toBus {
-		if msg.Cmd != "idle" {
+		if msg.Cmd != "idle"&&msg.Cmd != "get_TimeInfo" {
 			log.Printf("[Bus] Received: Cmd=%s", msg.Cmd)
 		}
 		switch msg.Cmd {
@@ -96,6 +96,16 @@ func (h *VstHost) loop() {
 			h.timeInfo.Flags |= vst2.TransportChanged
 			h.mu.Unlock()
 			h.stopRecording()
+		case "get_TimeInfo":
+			go func() {
+				h.bus.sendMsg(MsgBus{
+					From:   "vst_host",
+					To:     msg.From,
+					Cmd:    "reply_timeinfo",
+					Option: []string{h.TranscribeTimeInfo()},
+				})
+			}()
+
 		case "save_fxb":
 			h.syncFunc(func() { h.saveFxb(msg.Option[0]) })
 		case "load_fxb":
@@ -248,7 +258,11 @@ func (h *VstHost) audioThread() {
 			defer func() { recover() }()
 			h.mu.Lock()
 			if playing {
+				// 音楽的な位置 (PPQ: Pulses Per Quarter note) の更新
 				h.timeInfo.PpqPos = h.timeInfo.SamplePos / h.timeInfo.SampleRate * (h.timeInfo.Tempo / 60.0)
+				// 小節の開始位置を計算 (Piapro Studio が小節の区切りを認識するために必要)
+				beatsPerBar := float64(h.timeInfo.TimeSigNumerator)
+				h.timeInfo.BarStartPos = float64(int(h.timeInfo.PpqPos/beatsPerBar)) * beatsPerBar
 			}
 			h.timeInfo.NanoSeconds = float64(time.Since(h.startTime).Nanoseconds())
 			h.mu.Unlock()
@@ -387,4 +401,25 @@ func copyString(s string, ptr unsafe.Pointer) {
 		*(*byte)(unsafe.Pointer(uintptr(ptr) + uintptr(i))) = b[i]
 	}
 	*(*byte)(unsafe.Pointer(uintptr(ptr) + uintptr(len(b)))) = 0
+}
+
+// TranscribeTimeInfo: TimeInfo を音楽的な形式に変換する（文字起こし）
+func (h *VstHost) TranscribeTimeInfo() string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	t := h.timeInfo
+
+	// 音楽的な位置の計算 (現在の拍子設定を使用)
+	beatsPerBar := float64(t.TimeSigNumerator)
+	if beatsPerBar == 0 {
+		beatsPerBar = 4
+	}
+	totalBeats := t.PpqPos
+	bar := int(totalBeats/beatsPerBar) + 1
+	beat := int(totalBeats)%int(beatsPerBar) + 1
+	// 1拍を480ティックとした場合の端数 (MIDI標準的な解像度)
+	tick := int((totalBeats - float64(int(totalBeats))) * 480)
+
+	return fmt.Sprintf("位置: %03d:%d:%03d | サンプル: %10.0f | PPQ: %8.3f",
+		bar, beat, tick, t.SamplePos, t.PpqPos)
 }
