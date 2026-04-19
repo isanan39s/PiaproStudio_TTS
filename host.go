@@ -142,9 +142,9 @@ func (vsthost *VSTHost) loadPlugin(path string) error {
 	//vsthost.plugin.Dispatch(vst2.PluginOpcode(vsthost.opcodes["plugStateChanged"]), 0, 0, nil, 0)
 	//vsthost.plugin.Suspend()
 	vsthost.plugin.Dispatch(vst2.PluginOpcode(vsthost.opcodes["PlugEditGetRect"]), 0,
-	0,
-	unsafe.Pointer(&r),
-	0)
+		0,
+		unsafe.Pointer(&r),
+		0)
 	vsthost.plugin.Start()
 
 	vsthost.isLoadedPlagin = true
