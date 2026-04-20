@@ -14,6 +14,8 @@ import (
 
 	"pipelined.dev/audio/vst2"
 	"pipelined.dev/signal"
+
+	"github.com/ebitengine/oto/v3"
 )
 
 const (
@@ -23,26 +25,27 @@ const (
 )
 
 type VstHost struct {
-	bus      *BusHQdat
-	toBus    chan MsgBus
-	plugin   *vst2.Plugin
-	vst      *vst2.VST
-	active   bool
-	playing  bool
-	syncFunc func(func())
-
-	mu sync.RWMutex
-
-	sampleRate float64
-	bufferSize int
-	timeInfo   vst2.TimeInfo
-	startTime  time.Time
-
-	inBuffer  vst2.FloatBuffer
-	outBuffer vst2.FloatBuffer
-
-	wavFile     *os.File
-	wavDataSize uint32
+	bus           *BusHQdat
+	toBus         chan MsgBus
+	plugin        *vst2.Plugin
+	vst           *vst2.VST
+	active        bool
+	playing       bool
+	syncFunc      func(func())
+	mu            sync.RWMutex
+	sampleRate    float64
+	bufferSize    int
+	timeInfo      vst2.TimeInfo
+	startTime     time.Time
+	inBuffer      vst2.FloatBuffer
+	outBuffer     vst2.FloatBuffer
+	is_fileOut    bool
+	wavFile       *os.File
+	wavDataSize   uint32
+	is_speakerOut bool
+	otoContext    *oto.Context
+	otoPlayer     *oto.Player
+	otoWriter     io.WriteCloser // 追加: スピーカーへの書き込み口
 }
 
 func NewVstHost(bus *BusHQdat, sync func(func())) *VstHost {
@@ -57,6 +60,36 @@ func NewVstHost(bus *BusHQdat, sync func(func())) *VstHost {
 		bufferSize: 1024,
 		startTime:  time.Now(),
 	}
+
+	// oto の初期化 (32bit Float, Stereo, Hostのサンプルレートと同期)
+	op := &oto.NewContextOptions{
+		SampleRate:   int(host.sampleRate),
+		ChannelCount: 2,
+		Format:       oto.FormatFloat32LE,
+	}
+	println("starting oto audio lib")
+
+	otoCtx, ready, err := oto.NewContext(op)
+	if err != nil {
+		log.Printf("[Oto] Context creation error: %v", err)
+	} else {
+		println("waiting ready")
+
+		<-ready
+		println("done")
+
+		host.otoContext = otoCtx
+		// パイプを作成して、読み取り側を Player に渡し、書き込み側を保持する
+		pr, pw := io.Pipe()
+		host.otoWriter = pw
+		host.otoPlayer = otoCtx.NewPlayer(pr)
+		go func() {
+
+			host.otoPlayer.Play() // 再生準備完了
+		}()
+	}
+
+	println("inited oto")
 
 	host.timeInfo = vst2.TimeInfo{
 		SampleRate:         host.sampleRate,
@@ -83,6 +116,21 @@ func (h *VstHost) loop() {
 			if len(msg.Option) > 1 {
 				h.syncFunc(func() { h.loadPlugin(msg.Option[0], msg.Option[1]) })
 			}
+		case "set_output_conf":
+			tmp := msg.Option[0]
+			if tmp == "false" {
+				h.is_fileOut = false
+			} else {
+				h.is_fileOut = true
+			}
+
+			tmp = msg.Option[1]
+			if tmp == "false" {
+				h.is_speakerOut = false
+			} else {
+				h.is_speakerOut = true
+			}
+
 		case "play":
 			h.startRecording()
 			h.mu.Lock()
@@ -297,16 +345,22 @@ func (h *VstHost) startRecording() {
 	h.writeWavHeader(0)
 }
 func (h *VstHost) writeToWav() {
-	if h.wavFile == nil {
-		return
-	}
 	l, r := h.outBuffer.Channel(0), h.outBuffer.Channel(1)
 	buf := make([]float32, h.bufferSize*2)
 	for i := 0; i < h.bufferSize; i++ {
 		buf[i*2], buf[i*2+1] = l[i], r[i]
 	}
-	binary.Write(h.wavFile, binary.LittleEndian, buf)
-	h.wavDataSize += uint32(len(buf) * 4)
+
+	// 1. リアルタイム再生 (スピーカーへ)
+	if h.otoWriter != nil {
+		binary.Write(h.otoWriter, binary.LittleEndian, buf)
+	}
+
+	// 2. ファイル保存 (WAVへ)
+	if h.wavFile != nil {
+		binary.Write(h.wavFile, binary.LittleEndian, buf)
+		h.wavDataSize += uint32(len(buf) * 4)
+	}
 }
 func (h *VstHost) stopRecording() {
 	if h.wavFile == nil {
