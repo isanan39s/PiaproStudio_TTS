@@ -10,9 +10,10 @@ func main() {
 
 	// GUIの初期化 (ウィンドウ作成)
 	mw := NewGUI(bus)
-
+	println("inited window")
 	// VSTホストの初期化
 	NewVstHost(bus, mw.Synchronize)
+	println("inited host")
 
 	// メインループの開始 (ウィンドウが閉じられるまでブロック)
 	mw.Run()

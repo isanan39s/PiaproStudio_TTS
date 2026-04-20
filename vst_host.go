@@ -14,6 +14,8 @@ import (
 
 	"pipelined.dev/audio/vst2"
 	"pipelined.dev/signal"
+
+	"github.com/ebitengine/oto/v3"
 )
 
 const (
@@ -23,26 +25,27 @@ const (
 )
 
 type VstHost struct {
-	bus      *BusHQdat
-	toBus    chan MsgBus
-	plugin   *vst2.Plugin
-	vst      *vst2.VST
-	active   bool
-	playing  bool
-	syncFunc func(func())
-
-	mu sync.RWMutex
-
-	sampleRate float64
-	bufferSize int
-	timeInfo   vst2.TimeInfo
-	startTime  time.Time
-
-	inBuffer  vst2.FloatBuffer
-	outBuffer vst2.FloatBuffer
-
-	wavFile     *os.File
-	wavDataSize uint32
+	bus           *BusHQdat
+	toBus         chan MsgBus
+	plugin        *vst2.Plugin
+	vst           *vst2.VST
+	active        bool
+	playing       bool
+	syncFunc      func(func())
+	mu            sync.RWMutex
+	sampleRate    float64
+	bufferSize    int
+	timeInfo      vst2.TimeInfo
+	startTime     time.Time
+	inBuffer      vst2.FloatBuffer
+	outBuffer     vst2.FloatBuffer
+	is_fileOut    bool
+	wavFile       *os.File
+	wavDataSize   uint32
+	is_speakerOut bool
+	otoContext    *oto.Context
+	otoPlayer     *oto.Player
+	otoWriter     io.WriteCloser // 追加: スピーカーへの書き込み口
 }
 
 func NewVstHost(bus *BusHQdat, sync func(func())) *VstHost {
@@ -57,6 +60,36 @@ func NewVstHost(bus *BusHQdat, sync func(func())) *VstHost {
 		bufferSize: 1024,
 		startTime:  time.Now(),
 	}
+
+	// oto の初期化 (32bit Float, Stereo, Hostのサンプルレートと同期)
+	op := &oto.NewContextOptions{
+		SampleRate:   int(host.sampleRate),
+		ChannelCount: 2,
+		Format:       oto.FormatFloat32LE,
+	}
+	println("starting oto audio lib")
+
+	otoCtx, ready, err := oto.NewContext(op)
+	if err != nil {
+		log.Printf("[Oto] Context creation error: %v", err)
+	} else {
+		println("waiting ready")
+
+		<-ready
+		println("done")
+
+		host.otoContext = otoCtx
+		// パイプを作成して、読み取り側を Player に渡し、書き込み側を保持する
+		pr, pw := io.Pipe()
+		host.otoWriter = pw
+		host.otoPlayer = otoCtx.NewPlayer(pr)
+		go func() {
+
+			host.otoPlayer.Play() // 再生準備完了
+		}()
+	}
+
+	println("inited oto")
 
 	host.timeInfo = vst2.TimeInfo{
 		SampleRate:         host.sampleRate,
@@ -75,7 +108,7 @@ func NewVstHost(bus *BusHQdat, sync func(func())) *VstHost {
 
 func (h *VstHost) loop() {
 	for msg := range h.toBus {
-		if msg.Cmd != "idle" {
+		if msg.Cmd != "idle" && msg.Cmd != "get_TimeInfo" {
 			log.Printf("[Bus] Received: Cmd=%s", msg.Cmd)
 		}
 		switch msg.Cmd {
@@ -83,6 +116,21 @@ func (h *VstHost) loop() {
 			if len(msg.Option) > 1 {
 				h.syncFunc(func() { h.loadPlugin(msg.Option[0], msg.Option[1]) })
 			}
+		case "set_output_conf":
+			tmp := msg.Option[0]
+			if tmp == "false" {
+				h.is_fileOut = false
+			} else {
+				h.is_fileOut = true
+			}
+
+			tmp = msg.Option[1]
+			if tmp == "false" {
+				h.is_speakerOut = false
+			} else {
+				h.is_speakerOut = true
+			}
+
 		case "play":
 			h.startRecording()
 			h.mu.Lock()
@@ -96,6 +144,29 @@ func (h *VstHost) loop() {
 			h.timeInfo.Flags |= vst2.TransportChanged
 			h.mu.Unlock()
 			h.stopRecording()
+		case "seek_ppq": // PPQを指定してシーク移動
+			if len(msg.Option) > 0 {
+				var targetPpq float64
+				fmt.Sscanf(msg.Option[0], "%f", &targetPpq)
+				newSamplePos := h.PpqToSample(targetPpq)
+
+				h.mu.Lock()
+				h.timeInfo.SamplePos = newSamplePos
+				h.timeInfo.PpqPos = targetPpq
+				h.timeInfo.Flags |= vst2.TransportChanged
+				h.mu.Unlock()
+				log.Printf("[Host] Seek to PPQ: %.3f (Sample: %.0f)", targetPpq, newSamplePos)
+			}
+		case "get_TimeInfo":
+			go func() {
+				h.bus.sendMsg(MsgBus{
+					From:   "vst_host",
+					To:     msg.From,
+					Cmd:    "reply_timeinfo",
+					Option: []string{h.TranscribeTimeInfo()},
+				})
+			}()
+
 		case "save_fxb":
 			h.syncFunc(func() { h.saveFxb(msg.Option[0]) })
 		case "load_fxb":
@@ -248,7 +319,11 @@ func (h *VstHost) audioThread() {
 			defer func() { recover() }()
 			h.mu.Lock()
 			if playing {
+				// 音楽的な位置 (PPQ: Pulses Per Quarter note) の更新
 				h.timeInfo.PpqPos = h.timeInfo.SamplePos / h.timeInfo.SampleRate * (h.timeInfo.Tempo / 60.0)
+				// 小節の開始位置を計算 (Piapro Studio が小節の区切りを認識するために必要)
+				beatsPerBar := float64(h.timeInfo.TimeSigNumerator)
+				h.timeInfo.BarStartPos = float64(int(h.timeInfo.PpqPos/beatsPerBar)) * beatsPerBar
 			}
 			h.timeInfo.NanoSeconds = float64(time.Since(h.startTime).Nanoseconds())
 			h.mu.Unlock()
@@ -270,16 +345,22 @@ func (h *VstHost) startRecording() {
 	h.writeWavHeader(0)
 }
 func (h *VstHost) writeToWav() {
-	if h.wavFile == nil {
-		return
-	}
 	l, r := h.outBuffer.Channel(0), h.outBuffer.Channel(1)
 	buf := make([]float32, h.bufferSize*2)
 	for i := 0; i < h.bufferSize; i++ {
 		buf[i*2], buf[i*2+1] = l[i], r[i]
 	}
-	binary.Write(h.wavFile, binary.LittleEndian, buf)
-	h.wavDataSize += uint32(len(buf) * 4)
+
+	// 1. リアルタイム再生 (スピーカーへ)
+	if h.otoWriter != nil {
+		binary.Write(h.otoWriter, binary.LittleEndian, buf)
+	}
+
+	// 2. ファイル保存 (WAVへ)
+	if h.wavFile != nil {
+		binary.Write(h.wavFile, binary.LittleEndian, buf)
+		h.wavDataSize += uint32(len(buf) * 4)
+	}
 }
 func (h *VstHost) stopRecording() {
 	if h.wavFile == nil {
@@ -387,4 +468,40 @@ func copyString(s string, ptr unsafe.Pointer) {
 		*(*byte)(unsafe.Pointer(uintptr(ptr) + uintptr(i))) = b[i]
 	}
 	*(*byte)(unsafe.Pointer(uintptr(ptr) + uintptr(len(b)))) = 0
+}
+
+// TranscribeTimeInfo: TimeInfo を音楽的な形式に変換する（文字起こし）
+func (h *VstHost) TranscribeTimeInfo() string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	t := h.timeInfo
+
+	// 音楽的な位置の計算 (現在の拍子設定を使用)
+	beatsPerBar := float64(t.TimeSigNumerator)
+	if beatsPerBar == 0 {
+		beatsPerBar = 4
+	}
+	totalBeats := t.PpqPos
+	bar := int(totalBeats/beatsPerBar) + 1
+	beat := int(totalBeats)%int(beatsPerBar) + 1
+	// 1拍を480ティックとした場合の端数 (MIDI標準的な解像度)
+	tick := int((totalBeats - float64(int(totalBeats))) * 480)
+
+	return fmt.Sprintf("位置: %03d:%d:%03d | サンプル: %10.0f | PPQ: %8.3f",
+		bar, beat, tick, t.SamplePos, t.PpqPos)
+}
+
+// PpqToSample: PPQ（音楽的拍数）をサンプル位置に変換する
+func (h *VstHost) PpqToSample(ppq float64) float64 {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	tempo := h.timeInfo.Tempo
+	if tempo <= 0 {
+		tempo = 120.0
+	}
+
+	// PPQ * (60s / tempo) = 秒数
+	// 秒数 * sampleRate = サンプル数
+	return ppq * (60.0 / tempo) * h.sampleRate
 }

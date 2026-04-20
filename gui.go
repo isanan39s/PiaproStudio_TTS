@@ -1,104 +1,312 @@
 package main
 
 import (
+	"fmt"
 	"log"
+	"os"
+	"regexp"
+	"strconv"
+	"time"
 
 	"github.com/lxn/walk"
 	. "github.com/lxn/walk/declarative"
-	"pipelined.dev/audio/vst2"
-	"runtime"
-	"sync/atomic"
-	"unsafe"
 )
 
 type MyMainWindow struct {
 	*walk.MainWindow
-	childWin4Vst *walk.Composite
-	windowRady   atomic.Bool
+	vstContainer  *walk.CustomWidget
+	bus           *BusHQdat
+	plugptahLabel *walk.Label
+	statusLabel   *walk.Label // 追加: 再生位置などの表示用
+	ppqLineEdit   *walk.LineEdit
+	is_fOut       *walk.CheckBox
+	is_sOut       *walk.CheckBox
+	toBus         chan MsgBus
+	closing       chan struct{}
+	dumpCount     int
+	pulgpath      string
 }
 
-func UIthread(endchan chan struct{}, rsvchan chan MsgBus, sndchan chan MsgBus, vst *VSTHost) {
-
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-
-	mw := &MyMainWindow{}
-
-	go func() {
-
-		for rsvMsg := range rsvchan {
-			switch rsvMsg.Cmd {
-			case "GUI.close":
-				mw.Synchronize(func() {
-					mw.Close()
-					///終了処理も呼ぶ
-				})
-
-			case "GUI.openGUI":
-				// flagsとか作ってGUIopen=trueしてもいいかも
-				for vst.isLoadedPlagin == false || mw.windowRady.Load() == false {
-				}
-				mw.Synchronize(func() {
-					println("OK!")
-					hwnd := uintptr(mw.childWin4Vst.Handle())
-					vst.plugin.Dispatch(vst2.PluginOpcode(vst.opcodes["PlugEditOpen"]), 0, 0, unsafe.Pointer(hwnd), 0)
-				})
-				println(mw.childWin4Vst.Handle())
-			case "GUI.closeGUI":
-				// flagsとか作ってGUIopen=trueしてもいいかも
-				mw.Synchronize(func() {
-					vst.plugin.Dispatch(vst2.PluginOpcode(vst.opcodes["PlugEditClose"]), 0, 0, nil, 0)
-				})
+func getNextDumpCount() int {
+	max := 0
+	files, _ := os.ReadDir(".")
+	re := regexp.MustCompile(`^raw_state_(\d+)\.bin$`)
+	for _, file := range files {
+		res := re.FindStringSubmatch(file.Name())
+		if len(res) > 1 {
+			num, _ := strconv.Atoi(res[1])
+			if num > max {
+				max = num
 			}
-
 		}
+	}
+	return max
+}
 
-	}()
+func NewGUI(bus *BusHQdat) *MyMainWindow {
+	mw := new(MyMainWindow)
+	mw.bus = bus
+	mw.toBus = make(chan MsgBus, 100)
+	mw.closing = make(chan struct{})
+	mw.dumpCount = getNextDumpCount()
+	mw.pulgpath = "C:\\Program Files\\Vstplugins\\Piapro Studio VSTi.dll"
+	bus.registAddr("gui", mw.toBus)
 
-	MainWindow{
+	if err := (MainWindow{
 		AssignTo: &mw.MainWindow,
-		Title:    "title",
-		Size:     Size{640, 480},
-		Layout:   VBox{},
+		Title:    "VST Host Demo",
+		Size:     Size{Width: 800, Height: 600},
+		Layout:   VBox{Margins: Margins{Left: 5, Top: 5, Right: 5, Bottom: 5}},
+		Children: []Widget{
+			Composite{
+				Layout: VBox{MarginsZero: true},
+				Children: []Widget{
+					HSplitter{Children: []Widget{
+						PushButton{
+							Text:      "select pluginfile",
+							OnClicked: func() { mw.onSelectPlugin() },
+						},
+						PushButton{
+							Text:      "VSTをロード",
+							OnClicked: mw.onLoadPlugin,
+						},
+					},
+					},
+					Label{
+						Text:     mw.pulgpath,
+						AssignTo: &mw.plugptahLabel,
+					},
 
+					Label{Text: "--------\r\nWave output (to\"output.wav\"@32bit-float)"},
+					
+					HSplitter{Children: []Widget{
+						PushButton{
+							Text: "再生",
+							OnClicked: func() {
+								mw.bus.sendMsg(MsgBus{Cmd: "play", To: "vst_host", From: "gui"})
+							},
+						},
+						PushButton{
+							Text: "停止",
+							OnClicked: func() {
+								mw.bus.sendMsg(MsgBus{Cmd: "stop", To: "vst_host", From: "gui"})
+							},
+						},
+					}},
+					HSplitter{Children: []Widget{
+						LineEdit{
+							AssignTo: &mw.ppqLineEdit,
+						},
+						PushButton{
+							Text: "指定したPPQに移動",
+							
+							OnClicked: func() {
+								mw.bus.sendMsg(MsgBus{
+									To:     "vst_host",
+									From:   "gui",
+									Cmd:    "seek_ppq",
+									Option: []string{mw.ppqLineEdit.Text()},
+								})
+							},
+						},
+					},
+				},
+				
+
+					Label{Text: "-------\r\nfor debuging"},
+					HSplitter{Children: []Widget{
+						PushButton{
+							Text: "Dump Raw",
+							OnClicked: func() {
+								mw.dumpCount++
+								filename := fmt.Sprintf("./dump_fxb/raw_state_%03d.bin", mw.dumpCount)
+								mw.bus.sendMsg(MsgBus{Cmd: "dump_raw", To: "vst_host", From: "gui", Option: []string{filename}})
+							},
+						},
+						PushButton{
+							Text: "Load Raw",
+							OnClicked: func() {
+								dlg := new(walk.FileDialog)
+								dlg.Filter = "Binary files (*.bin)|*.bin"
+								if ok, _ := dlg.ShowOpen(mw.MainWindow); ok {
+									mw.bus.sendMsg(MsgBus{Cmd: "load_raw", To: "vst_host", From: "gui", Option: []string{dlg.FilePath}})
+								}
+							},
+						},
+						PushButton{
+							Text: "Diff Last 2",
+							OnClicked: func() {
+								if mw.dumpCount < 2 {
+									return
+								}
+								fileA := fmt.Sprintf("./dump_fxb/raw_state_%03d.bin", mw.dumpCount-1)
+								fileB := fmt.Sprintf("./dump_fxb/raw_state_%03d.bin", mw.dumpCount)
+								mw.bus.sendMsg(MsgBus{Cmd: "compare", To: "vst_host", From: "gui", Option: []string{fileA, fileB}})
+							},
+						},
+					}},
+				},
+			},
+			CustomWidget{
+				AssignTo: &mw.vstContainer,
+			},
+			
+			Label{
+				Text:     "停止中",
+				AssignTo: &mw.statusLabel,
+				Font:     Font{PointSize: 12, Bold: true},
+			},
+		},
 		MenuItems: []MenuItem{
 			Menu{
-				Text: "ファイル",
+				Text: "FILE",
 				Items: []MenuItem{
 					Action{
-						Text:        "終了",
-						OnTriggered: func() { mw.Close() },
+						Text: "open ppsv4xvsti",
+						Shortcut: Shortcut{
+							Key:       walk.KeyO,
+							Modifiers: walk.ModControl,
+						},
+						OnTriggered: mw.onLoadPlugin,
+					},
+					Action{
+						Text: "save FXB",
+						Shortcut: Shortcut{
+							Key:       walk.KeyS,
+							Modifiers: walk.ModControl,
+						},
+						OnTriggered: func() {
+							filename := fmt.Sprintf("raw_state_%03d.fxb", mw.dumpCount)
+							mw.toBus <- MsgBus{
+								To:     "vst_host",
+								From:   "gui",
+								Cmd:    "save_fxb",
+								Option: []string{filename},
+							}
+						},
+					},
+					Action{
+						Text: "load FXB",
+						OnTriggered: func() {
+
+							dlg := new(walk.FileDialog)
+							dlg.Filter = "Bank files (*.fxb)|*.fxb"
+							if ok, _ := dlg.ShowOpen(mw.MainWindow); ok {
+								mw.toBus <- MsgBus{
+									To:     "vst_host",
+									From:   "gui",
+									Cmd:    "load_fxb",
+									Option: []string{dlg.FilePath},
+								}
+							}
+						},
+					},
+					Action{
+						Text: "Quit",
+						Shortcut: Shortcut{
+							Key:       walk.KeyQ,
+							Modifiers: walk.ModControl,
+						},
+						OnTriggered: func() {
+							mw.bus.sendMsg(MsgBus{Cmd: "close", To: "vst_host", From: "gui"})
+							mw.Close()
+						},
+					},
+				},
+			},
+
+			Menu{
+				Text: "help",
+				Items: []MenuItem{
+					Menu{
+						Text: "about this program",
+						Items: []MenuItem{
+							Action{
+								Text: "このプログラムについて",
+								OnTriggered: func() {
+									mw.appInfo()
+								},
+							},
+						},
 					},
 				},
 			},
 		},
-
-		Children: []Widget{
-			Composite{
-				AssignTo:        &mw.childWin4Vst,
-				Layout:          nil,
-				DoubleBuffering: true,
-			},
-		},
-	}.Create()
-
-	mw.Show()
-	mw.windowRady.Store(true)
-	sndchan <- MsgBus{
-		To:   "main",
-		From: "GUI",
-		Cmd:  "GUI.WindowReady",
+	}).Create(); err != nil {
+		log.Fatalf("MainWindow生成失敗: %v", err)
 	}
-	print("ウインドウよーい")
-	err := mw.Run()
-	print("ウインドウ止め")
 
-	if err != 0 {
-		print("異常あり")
-		log.Fatal(err)
+	// Closingイベントを別途アタッチ
+	mw.Closing().Attach(func(canClose *bool, reason walk.CloseReason) {
+		close(mw.closing)
+		mw.bus.sendMsg(MsgBus{Cmd: "close", To: "vst_host", From: "gui"})
+	})
+
+	go func() {
+		ticker := time.NewTicker(100 * time.Millisecond) // 更新頻度を 100ms に調整
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				mw.bus.sendMsg(MsgBus{Cmd: "idle", To: "vst_host", From: "gui"})
+				mw.bus.sendMsg(MsgBus{Cmd: "get_TimeInfo", To: "vst_host", From: "gui"}) // 位置情報を要求
+			case <-mw.closing:
+				return
+			}
+		}
+	}()
+
+	go mw.loop()
+	return mw
+}
+
+func (mw *MyMainWindow) loop() {
+	for {
+		select {
+		case msg := <-mw.toBus:
+			switch msg.Cmd {
+			case "plugin_loaded":
+				log.Println("GUI: プラグインがロードされました")
+			case "reply_timeinfo": // ホストからの時間情報返答を処理
+				if len(msg.Option) > 0 {
+					status := msg.Option[0]
+					mw.Synchronize(func() {
+						if mw.statusLabel != nil {
+							mw.statusLabel.SetText(status)
+						}
+					})
+				}
+			}
+		case <-mw.closing:
+			return
+		}
+	}
+}
+
+func (mw *MyMainWindow) onSelectPlugin() error {
+	dlg := new(walk.FileDialog)
+	dlg.Filter = "VST2 DLL (*.dll)|*.dll"
+	if ok, _ := dlg.ShowOpen(mw.MainWindow); ok {
+		mw.pulgpath = dlg.FilePath
+		mw.plugptahLabel.SetText(mw.pulgpath)
 	} else {
-		print("問題なし")
+		return fmt.Errorf("kyannseru")
 	}
-	print("ウインドウ止めた")
-	close(endchan)
+	return nil
+}
+
+func (mw *MyMainWindow) onLoadPlugin() {
+	if mw.pulgpath == "" {
+		if mw.onSelectPlugin() != nil {
+			return
+		}
+	}
+
+	hwndStr := fmt.Sprintf("%x", mw.vstContainer.Handle())
+	mw.bus.sendMsg(MsgBus{Cmd: "load", To: "vst_host", From: "gui", Option: []string{mw.pulgpath, hwndStr}})
+
+}
+
+func (mw *MyMainWindow) appInfo() { ///イベントハンドラ的な
+	walk.MsgBox(mw.MainWindow.Form(), "このプログラムについて", "アプリ名\nversion:0.1\nby isanan39s", walk.MsgBoxOK)
 }

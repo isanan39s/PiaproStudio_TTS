@@ -3,9 +3,10 @@ package main
 import (
 	"log"
 	"os"
-	//"pipelined.dev/audio/vst2"
+	"pipelined.dev/audio/vst2"
 	"strconv"
 	"strings"
+	"unsafe"
 )
 
 // var (
@@ -85,8 +86,8 @@ func main() {
 	go func() { UIthread(UIendchan, UIChan, msgchan, vsthost) }()
 	go func() { vsthost.VSTPlaginThrad(VSTendchan, VSTChan, msgchan) }()
 
-	tmp:=<-mainChan //window待機 いい感じに受信処理したい
-	println(tmp.Cmd,tmp.From)
+	tmp := <-mainChan //window待機 いい感じに受信処理したい
+	println(tmp.Cmd, tmp.From)
 	msgchan <- MsgBus{
 		To:   "VSTiTh",
 		From: "main",
@@ -101,6 +102,16 @@ func main() {
 		From: "main",
 		Cmd:  "GUI.openGUI",
 	}
+
+	tmp = <-mainChan
+
+	println("GUIを開きます")
+	hwnd := uintptr(0)
+	println("get hwnd=", hwnd)
+	vsthost.plugin.Dispatch(vst2.PluginOpcode(vsthost.opcodes["PlugEditOpen"]), 0, 0, unsafe.Pointer(hwnd), 0)
+		vsthost.plugin.Resume()
+
+	println("dispatchd!!!!")
 
 	<-VSTendchan
 	<-UIendchan
