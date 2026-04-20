@@ -19,6 +19,8 @@ type MyMainWindow struct {
 	plugptahLabel *walk.Label
 	statusLabel   *walk.Label // 追加: 再生位置などの表示用
 	ppqLineEdit   *walk.LineEdit
+	is_fOut       *walk.CheckBox
+	is_sOut       *walk.CheckBox
 	toBus         chan MsgBus
 	closing       chan struct{}
 	dumpCount     int
@@ -76,6 +78,7 @@ func NewGUI(bus *BusHQdat) *MyMainWindow {
 					},
 
 					Label{Text: "--------\r\nWave output (to\"output.wav\"@32bit-float)"},
+					
 					HSplitter{Children: []Widget{
 						PushButton{
 							Text: "再生",
@@ -89,15 +92,14 @@ func NewGUI(bus *BusHQdat) *MyMainWindow {
 								mw.bus.sendMsg(MsgBus{Cmd: "stop", To: "vst_host", From: "gui"})
 							},
 						},
-					},
-					},
+					}},
 					HSplitter{Children: []Widget{
 						LineEdit{
 							AssignTo: &mw.ppqLineEdit,
 						},
 						PushButton{
 							Text: "指定したPPQに移動",
-
+							
 							OnClicked: func() {
 								mw.bus.sendMsg(MsgBus{
 									To:     "vst_host",
@@ -108,7 +110,8 @@ func NewGUI(bus *BusHQdat) *MyMainWindow {
 							},
 						},
 					},
-					},
+				},
+				
 
 					Label{Text: "-------\r\nfor debuging"},
 					HSplitter{Children: []Widget{
@@ -147,6 +150,7 @@ func NewGUI(bus *BusHQdat) *MyMainWindow {
 			CustomWidget{
 				AssignTo: &mw.vstContainer,
 			},
+			
 			Label{
 				Text:     "停止中",
 				AssignTo: &mw.statusLabel,
