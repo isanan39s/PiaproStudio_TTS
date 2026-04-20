@@ -75,7 +75,7 @@ func NewVstHost(bus *BusHQdat, sync func(func())) *VstHost {
 
 func (h *VstHost) loop() {
 	for msg := range h.toBus {
-		if msg.Cmd != "idle"&&msg.Cmd != "get_TimeInfo" {
+		if msg.Cmd != "idle" && msg.Cmd != "get_TimeInfo" {
 			log.Printf("[Bus] Received: Cmd=%s", msg.Cmd)
 		}
 		switch msg.Cmd {
@@ -96,6 +96,19 @@ func (h *VstHost) loop() {
 			h.timeInfo.Flags |= vst2.TransportChanged
 			h.mu.Unlock()
 			h.stopRecording()
+		case "seek_ppq": // PPQを指定してシーク移動
+			if len(msg.Option) > 0 {
+				var targetPpq float64
+				fmt.Sscanf(msg.Option[0], "%f", &targetPpq)
+				newSamplePos := h.PpqToSample(targetPpq)
+
+				h.mu.Lock()
+				h.timeInfo.SamplePos = newSamplePos
+				h.timeInfo.PpqPos = targetPpq
+				h.timeInfo.Flags |= vst2.TransportChanged
+				h.mu.Unlock()
+				log.Printf("[Host] Seek to PPQ: %.3f (Sample: %.0f)", targetPpq, newSamplePos)
+			}
 		case "get_TimeInfo":
 			go func() {
 				h.bus.sendMsg(MsgBus{
@@ -422,4 +435,19 @@ func (h *VstHost) TranscribeTimeInfo() string {
 
 	return fmt.Sprintf("位置: %03d:%d:%03d | サンプル: %10.0f | PPQ: %8.3f",
 		bar, beat, tick, t.SamplePos, t.PpqPos)
+}
+
+// PpqToSample: PPQ（音楽的拍数）をサンプル位置に変換する
+func (h *VstHost) PpqToSample(ppq float64) float64 {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	tempo := h.timeInfo.Tempo
+	if tempo <= 0 {
+		tempo = 120.0
+	}
+
+	// PPQ * (60s / tempo) = 秒数
+	// 秒数 * sampleRate = サンプル数
+	return ppq * (60.0 / tempo) * h.sampleRate
 }
