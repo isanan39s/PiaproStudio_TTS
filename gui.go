@@ -25,6 +25,7 @@ type MyMainWindow struct {
 	closing       chan struct{}
 	dumpCount     int
 	pulgpath      string
+
 }
 
 func getNextDumpCount() int {
@@ -55,102 +56,163 @@ func NewGUI(bus *BusHQdat) *MyMainWindow {
 	if err := (MainWindow{
 		AssignTo: &mw.MainWindow,
 		Title:    "VST Host Demo",
-		Size:     Size{Width: 800, Height: 600},
+		Size:     Size{Width: 800, Height: 600}, // 高さを少し広げる
 		Layout:   VBox{Margins: Margins{Left: 5, Top: 5, Right: 5, Bottom: 5}},
 		Children: []Widget{
+			// --- 上部コントロールエリア ---
 			Composite{
 				Layout: VBox{MarginsZero: true},
 				Children: []Widget{
-					HSplitter{Children: []Widget{
-						PushButton{
-							Text:      "select pluginfile",
-							OnClicked: func() { mw.onSelectPlugin() },
+					HSplitter{
+						Children: []Widget{
+							PushButton{
+								Text:      "select pluginfile",
+								OnClicked: func() { mw.onSelectPlugin() },
+							},
+							PushButton{
+								Text:      "VSTをロード",
+								OnClicked: mw.onLoadPlugin,
+							},
 						},
-						PushButton{
-							Text:      "VSTをロード",
-							OnClicked: mw.onLoadPlugin,
-						},
-					},
 					},
 					Label{
 						Text:     mw.pulgpath,
 						AssignTo: &mw.plugptahLabel,
 					},
+					Label{Text: "--------\r\nWave output (32bit-float)"},
 
-					Label{Text: "--------\r\nWave output (to\"output.wav\"@32bit-float)"},
-					
-					HSplitter{Children: []Widget{
-						PushButton{
-							Text: "再生",
-							OnClicked: func() {
-								mw.bus.sendMsg(MsgBus{Cmd: "play", To: "vst_host", From: "gui"})
+					HSplitter{
+						Children: []Widget{
+							PushButton{
+								Text: "再生",
+								OnClicked: func() {
+									mw.bus.sendMsg(MsgBus{Cmd: "play", To: "vst_host", From: "gui"})
+								},
+							},
+							PushButton{
+								Text: "停止",
+								OnClicked: func() {
+									mw.bus.sendMsg(MsgBus{Cmd: "stop", To: "vst_host", From: "gui"})
+									mw.bus.sendMsg(MsgBus{
+										To:     "vst_host",
+										From:   "gui",
+										Cmd:    "seek_ppq",
+										Option: []string{mw.ppqLineEdit.Text()},
+									})
+								},
 							},
 						},
-						PushButton{
-							Text: "停止",
-							OnClicked: func() {
-								mw.bus.sendMsg(MsgBus{Cmd: "stop", To: "vst_host", From: "gui"})
+					},
+					HSplitter{
+						Children: []Widget{
+							LineEdit{
+								AssignTo: &mw.ppqLineEdit,
+								Text:     "0",
 							},
-						},
-					}},
-					HSplitter{Children: []Widget{
-						LineEdit{
-							AssignTo: &mw.ppqLineEdit,
-						},
-						PushButton{
-							Text: "指定したPPQに移動",
-							
-							OnClicked: func() {
-								mw.bus.sendMsg(MsgBus{
-									To:     "vst_host",
-									From:   "gui",
-									Cmd:    "seek_ppq",
-									Option: []string{mw.ppqLineEdit.Text()},
-								})
+							PushButton{
+								Text: "指定したPPQに移動",
+								OnClicked: func() {
+									mw.bus.sendMsg(MsgBus{
+										To:     "vst_host",
+										From:   "gui",
+										Cmd:    "seek_ppq",
+										Option: []string{mw.ppqLineEdit.Text()},
+									})
+								},
 							},
 						},
 					},
 				},
-				
+			},
 
-					Label{Text: "-------\r\nfor debuging"},
-					HSplitter{Children: []Widget{
-						PushButton{
-							Text: "Dump Raw",
-							OnClicked: func() {
-								mw.dumpCount++
-								filename := fmt.Sprintf("./dump_fxb/raw_state_%03d.bin", mw.dumpCount)
-								mw.bus.sendMsg(MsgBus{Cmd: "dump_raw", To: "vst_host", From: "gui", Option: []string{filename}})
-							},
+			// --- 出力設定エリア (独立させて確実に表示) ---
+			Composite{
+				Layout: HBox{MarginsZero: true},
+				Children: []Widget{
+					CheckBox{
+						AssignTo: &mw.is_fOut,
+						Text:     "ファイルに書き出し",
+						Checked:  true,
+						OnCheckedChanged: func() {
+							mw.bus.sendMsg(MsgBus{
+								Cmd:  "set_output_conf",
+								To:   "vst_host",
+								From: "gui",
+								Option: []string{
+									fmt.Sprintf("%t", mw.is_fOut.Checked()),
+									fmt.Sprintf("%t", mw.is_sOut.Checked()),
+								},
+							})
 						},
-						PushButton{
-							Text: "Load Raw",
-							OnClicked: func() {
-								dlg := new(walk.FileDialog)
-								dlg.Filter = "Binary files (*.bin)|*.bin"
-								if ok, _ := dlg.ShowOpen(mw.MainWindow); ok {
-									mw.bus.sendMsg(MsgBus{Cmd: "load_raw", To: "vst_host", From: "gui", Option: []string{dlg.FilePath}})
-								}
-							},
+					},
+					CheckBox{
+						AssignTo: &mw.is_sOut,
+						Text:     "スピーカに出力",
+						Checked:  true,
+						OnCheckedChanged: func() {
+							mw.bus.sendMsg(MsgBus{
+								Cmd:  "set_output_conf",
+								To:   "vst_host",
+								From: "gui",
+								Option: []string{
+									fmt.Sprintf("%t", mw.is_fOut.Checked()),
+									fmt.Sprintf("%t", mw.is_sOut.Checked()),
+								},
+							})
 						},
-						PushButton{
-							Text: "Diff Last 2",
-							OnClicked: func() {
-								if mw.dumpCount < 2 {
-									return
-								}
-								fileA := fmt.Sprintf("./dump_fxb/raw_state_%03d.bin", mw.dumpCount-1)
-								fileB := fmt.Sprintf("./dump_fxb/raw_state_%03d.bin", mw.dumpCount)
-								mw.bus.sendMsg(MsgBus{Cmd: "compare", To: "vst_host", From: "gui", Option: []string{fileA, fileB}})
-							},
-						},
-					}},
+					},
 				},
 			},
-			CustomWidget{
-				AssignTo: &mw.vstContainer,
+
+			// --- デバッグエリア ---
+			Composite{
+				Layout: VBox{MarginsZero: true},
+				Children: []Widget{
+					Label{Text: "-------\r\nfor debuging"},
+					HSplitter{
+						Children: []Widget{
+							PushButton{
+								Text: "Dump Raw",
+								OnClicked: func() {
+									mw.dumpCount++
+									filename := fmt.Sprintf("./dump_fxb/raw_state_%03d.bin", mw.dumpCount)
+									mw.bus.sendMsg(MsgBus{Cmd: "dump_raw", To: "vst_host", From: "gui", Option: []string{filename}})
+								},
+							},
+							PushButton{
+								Text: "Load Raw",
+								OnClicked: func() {
+									dlg := new(walk.FileDialog)
+									dlg.Filter = "Binary files (*.bin)|*.bin"
+									if ok, _ := dlg.ShowOpen(mw.MainWindow); ok {
+										mw.bus.sendMsg(MsgBus{Cmd: "load_raw", To: "vst_host", From: "gui", Option: []string{dlg.FilePath}})
+									}
+								},
+							},
+							PushButton{
+								Text: "Diff Last 2",
+								OnClicked: func() {
+									if mw.dumpCount < 2 {
+										return
+									}
+									fileA := fmt.Sprintf("./dump_fxb/raw_state_%03d.bin", mw.dumpCount-1)
+									fileB := fmt.Sprintf("./dump_fxb/raw_state_%03d.bin", mw.dumpCount)
+									mw.bus.sendMsg(MsgBus{Cmd: "compare", To: "vst_host", From: "gui", Option: []string{fileA, fileB}})
+								},
+							},
+						},
+					},
+				},
 			},
-			
+
+			// --- VSTエディタエリア ---
+			CustomWidget{
+				AssignTo:           &mw.vstContainer,
+				MinSize:            Size{Height: 200},
+				AlwaysConsumeSpace: true,
+			},
+
+			// --- ステータスエリア ---
 			Label{
 				Text:     "停止中",
 				AssignTo: &mw.statusLabel,
