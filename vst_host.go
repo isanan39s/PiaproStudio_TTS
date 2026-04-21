@@ -52,13 +52,16 @@ func NewVstHost(bus *BusHQdat, sync func(func())) *VstHost {
 	toBus := make(chan MsgBus, 100)
 	bus.registAddr("vst_host", toBus)
 
+
 	host := &VstHost{
 		bus:        bus,
 		toBus:      toBus,
 		syncFunc:   sync,
-		sampleRate: 44100,
+		sampleRate: 48000,
 		bufferSize: 1024,
 		startTime:  time.Now(),
+		is_fileOut: true,
+		is_speakerOut: true,
 	}
 
 	// oto の初期化 (32bit Float, Stereo, Hostのサンプルレートと同期)
@@ -93,7 +96,7 @@ func NewVstHost(bus *BusHQdat, sync func(func())) *VstHost {
 
 	host.timeInfo = vst2.TimeInfo{
 		SampleRate:         host.sampleRate,
-		Tempo:              120.0,
+		Tempo:              160.0,
 		TimeSigNumerator:   4,
 		TimeSigDenominator: 4,
 		Flags:              vst2.TransportChanged,
@@ -328,9 +331,23 @@ func (h *VstHost) audioThread() {
 			h.timeInfo.NanoSeconds = float64(time.Since(h.startTime).Nanoseconds())
 			h.mu.Unlock()
 			p.ProcessFloat(h.inBuffer, h.outBuffer)
+
+			// --- スピーカー出力 (再生/停止にかかわらず常に実行) ---
+			if h.otoWriter != nil && h.is_speakerOut {
+				l, r := h.outBuffer.Channel(0), h.outBuffer.Channel(1)
+				buf := make([]float32, h.bufferSize*2)
+				for i := 0; i < h.bufferSize; i++ {
+					buf[i*2], buf[i*2+1] = l[i], r[i]
+				}
+				binary.Write(h.otoWriter, binary.LittleEndian, buf)
+			}
+
 			h.mu.Lock()
 			if playing {
-				h.writeToWav()
+				// --- ファイル保存 (再生中のみ) ---
+				if h.is_fileOut {
+					h.writeToWav()
+				}
 				h.timeInfo.SamplePos += float64(h.bufferSize)
 			}
 			h.timeInfo.Flags &= ^vst2.TransportChanged
@@ -345,22 +362,18 @@ func (h *VstHost) startRecording() {
 	h.writeWavHeader(0)
 }
 func (h *VstHost) writeToWav() {
+	if h.wavFile == nil {
+		return
+	}
 	l, r := h.outBuffer.Channel(0), h.outBuffer.Channel(1)
 	buf := make([]float32, h.bufferSize*2)
 	for i := 0; i < h.bufferSize; i++ {
 		buf[i*2], buf[i*2+1] = l[i], r[i]
 	}
 
-	// 1. リアルタイム再生 (スピーカーへ)
-	if h.otoWriter != nil {
-		binary.Write(h.otoWriter, binary.LittleEndian, buf)
-	}
-
-	// 2. ファイル保存 (WAVへ)
-	if h.wavFile != nil {
-		binary.Write(h.wavFile, binary.LittleEndian, buf)
-		h.wavDataSize += uint32(len(buf) * 4)
-	}
+	// ファイル保存 (WAVへ)
+	binary.Write(h.wavFile, binary.LittleEndian, buf)
+	h.wavDataSize += uint32(len(buf) * 4)
 }
 func (h *VstHost) stopRecording() {
 	if h.wavFile == nil {
@@ -381,8 +394,8 @@ func (h *VstHost) writeWavHeader(sz uint32) {
 	binary.Write(h.wavFile, binary.LittleEndian, uint32(16))
 	binary.Write(h.wavFile, binary.LittleEndian, uint16(3))
 	binary.Write(h.wavFile, binary.LittleEndian, uint16(2))
-	binary.Write(h.wavFile, binary.LittleEndian, uint32(44100))
-	binary.Write(h.wavFile, binary.LittleEndian, uint32(44100*8))
+	binary.Write(h.wavFile, binary.LittleEndian, uint32(48000))
+	binary.Write(h.wavFile, binary.LittleEndian, uint32(48000*8))
 	binary.Write(h.wavFile, binary.LittleEndian, uint16(8))
 	binary.Write(h.wavFile, binary.LittleEndian, uint16(32))
 	binary.Write(h.wavFile, binary.LittleEndian, []byte("data"))
