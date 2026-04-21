@@ -46,42 +46,21 @@ type VstHost struct {
 	otoContext    *oto.Context
 	otoPlayer     *oto.Player
 	otoWriter     io.WriteCloser // 追加: スピーカーへの書き込み口
-	bus           *BusHQdat
-	toBus         chan MsgBus
-	plugin        *vst2.Plugin
-	vst           *vst2.VST
-	active        bool
-	playing       bool
-	syncFunc      func(func())
-	mu            sync.RWMutex
-	sampleRate    float64
-	bufferSize    int
-	timeInfo      vst2.TimeInfo
-	startTime     time.Time
-	inBuffer      vst2.FloatBuffer
-	outBuffer     vst2.FloatBuffer
-	is_fileOut    bool
-	wavFile       *os.File
-	wavDataSize   uint32
-	is_speakerOut bool
-	otoContext    *oto.Context
-	otoPlayer     *oto.Player
-	otoWriter     io.WriteCloser // 追加: スピーカーへの書き込み口
+
 }
 
 func NewVstHost(bus *BusHQdat, sync func(func())) *VstHost {
 	toBus := make(chan MsgBus, 100)
 	bus.registAddr("vst_host", toBus)
 
-
 	host := &VstHost{
-		bus:        bus,
-		toBus:      toBus,
-		syncFunc:   sync,
-		sampleRate: 48000,
-		bufferSize: 1024,
-		startTime:  time.Now(),
-		is_fileOut: true,
+		bus:           bus,
+		toBus:         toBus,
+		syncFunc:      sync,
+		sampleRate:    48000,
+		bufferSize:    1024,
+		startTime:     time.Now(),
+		is_fileOut:    true,
 		is_speakerOut: true,
 	}
 
@@ -90,6 +69,7 @@ func NewVstHost(bus *BusHQdat, sync func(func())) *VstHost {
 		SampleRate:   int(host.sampleRate),
 		ChannelCount: 2,
 		Format:       oto.FormatFloat32LE,
+		//BufferSize:   4096/4, // 小さめのバッファ(約512サンプル)で遅延を抑制
 	}
 	println("starting oto audio lib")
 
@@ -140,20 +120,7 @@ func (h *VstHost) loop() {
 			if len(msg.Option) > 1 {
 				h.syncFunc(func() { h.loadPlugin(msg.Option[0], msg.Option[1]) })
 			}
-		case "set_output_conf":
-			tmp := msg.Option[0]
-			if tmp == "false" {
-				h.is_fileOut = false
-			} else {
-				h.is_fileOut = true
-			}
 
-			tmp = msg.Option[1]
-			if tmp == "false" {
-				h.is_speakerOut = false
-			} else {
-				h.is_speakerOut = true
-			}
 
 		case "set_output_conf":
 			tmp := msg.Option[0]

@@ -26,9 +26,6 @@ type MyMainWindow struct {
 	dumpCount     int
 	pulgpath      string
 
-	ppqLineEdit *walk.LineEdit
-	is_fOut     *walk.CheckBox
-	is_sOut     *walk.CheckBox
 }
 
 func getNextDumpCount() int {
@@ -83,7 +80,7 @@ func NewGUI(bus *BusHQdat) *MyMainWindow {
 						AssignTo: &mw.plugptahLabel,
 					},
 					Label{Text: "--------\r\nWave output (32bit-float)"},
-					
+
 					HSplitter{
 						Children: []Widget{
 							PushButton{
@@ -110,7 +107,7 @@ func NewGUI(bus *BusHQdat) *MyMainWindow {
 						Children: []Widget{
 							LineEdit{
 								AssignTo: &mw.ppqLineEdit,
-								Text: "0",
+								Text:     "0",
 							},
 							PushButton{
 								Text: "指定したPPQに移動",
