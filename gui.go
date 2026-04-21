@@ -18,6 +18,9 @@ type MyMainWindow struct {
 	bus           *BusHQdat
 	plugptahLabel *walk.Label
 	statusLabel   *walk.Label // 追加: 再生位置などの表示用
+	ppqLineEdit   *walk.LineEdit
+	is_fOut       *walk.CheckBox
+	is_sOut       *walk.CheckBox
 	toBus         chan MsgBus
 	closing       chan struct{}
 	dumpCount     int
@@ -80,6 +83,7 @@ func NewGUI(bus *BusHQdat) *MyMainWindow {
 						AssignTo: &mw.plugptahLabel,
 					},
 					Label{Text: "--------\r\nWave output (32bit-float)"},
+					
 					HSplitter{
 						Children: []Widget{
 							PushButton{

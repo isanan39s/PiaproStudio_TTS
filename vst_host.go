@@ -46,6 +46,27 @@ type VstHost struct {
 	otoContext    *oto.Context
 	otoPlayer     *oto.Player
 	otoWriter     io.WriteCloser // 追加: スピーカーへの書き込み口
+	bus           *BusHQdat
+	toBus         chan MsgBus
+	plugin        *vst2.Plugin
+	vst           *vst2.VST
+	active        bool
+	playing       bool
+	syncFunc      func(func())
+	mu            sync.RWMutex
+	sampleRate    float64
+	bufferSize    int
+	timeInfo      vst2.TimeInfo
+	startTime     time.Time
+	inBuffer      vst2.FloatBuffer
+	outBuffer     vst2.FloatBuffer
+	is_fileOut    bool
+	wavFile       *os.File
+	wavDataSize   uint32
+	is_speakerOut bool
+	otoContext    *oto.Context
+	otoPlayer     *oto.Player
+	otoWriter     io.WriteCloser // 追加: スピーカーへの書き込み口
 }
 
 func NewVstHost(bus *BusHQdat, sync func(func())) *VstHost {
@@ -119,6 +140,21 @@ func (h *VstHost) loop() {
 			if len(msg.Option) > 1 {
 				h.syncFunc(func() { h.loadPlugin(msg.Option[0], msg.Option[1]) })
 			}
+		case "set_output_conf":
+			tmp := msg.Option[0]
+			if tmp == "false" {
+				h.is_fileOut = false
+			} else {
+				h.is_fileOut = true
+			}
+
+			tmp = msg.Option[1]
+			if tmp == "false" {
+				h.is_speakerOut = false
+			} else {
+				h.is_speakerOut = true
+			}
+
 		case "set_output_conf":
 			tmp := msg.Option[0]
 			if tmp == "false" {
@@ -362,9 +398,6 @@ func (h *VstHost) startRecording() {
 	h.writeWavHeader(0)
 }
 func (h *VstHost) writeToWav() {
-	if h.wavFile == nil {
-		return
-	}
 	l, r := h.outBuffer.Channel(0), h.outBuffer.Channel(1)
 	buf := make([]float32, h.bufferSize*2)
 	for i := 0; i < h.bufferSize; i++ {
