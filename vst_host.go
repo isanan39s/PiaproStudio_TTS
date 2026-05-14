@@ -97,7 +97,7 @@ func NewVstHost(bus *BusHQdat, sync func(func())) *VstHost {
 
 	host.timeInfo = vst2.TimeInfo{
 		SampleRate:         host.sampleRate,
-		Tempo:              160.0,
+		Tempo:              180.0,
 		TimeSigNumerator:   4,
 		TimeSigDenominator: 4,
 		Flags:              vst2.TransportChanged,
@@ -416,6 +416,7 @@ func (h *VstHost) loadPlugin(path string, hwndStr string) {
 	v, _ := vst2.Open(path)
 	h.vst = v
 	plugin := v.Plugin(func(op vst2.HostOpcode, index int32, value int64, ptr unsafe.Pointer, opt float32) int64 {
+		println("[hostcallback] opcode ",op,index,value)
 		switch op {
 		case vst2.HostVersion:
 			return 2400
