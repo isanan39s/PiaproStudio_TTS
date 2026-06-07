@@ -2,4 +2,6 @@
 *.dmp
 *.out
 desktop.ini
-test/dump_fxb/mikusqe/libresvip*
+test/dump_fxb/LibreSVIP*
+
+test/dump_fxb/venv
