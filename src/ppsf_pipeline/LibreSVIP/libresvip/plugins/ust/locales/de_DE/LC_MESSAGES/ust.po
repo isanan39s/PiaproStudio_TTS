@@ -1,0 +1,44 @@
+msgid ""
+msgstr ""
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"X-Crowdin-Project: libresvip\n"
+"X-Crowdin-Project-ID: 645830\n"
+"X-Crowdin-Language: de\n"
+"X-Crowdin-File: /libresvip/plugins/ust/ust.po\n"
+"X-Crowdin-File-ID: 558\n"
+"Project-Id-Version: libresvip\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language-Team: German\n"
+"Language: de_DE\n"
+"PO-Revision-Date: 2026-03-23 01:36\n"
+
+msgid "Text encoding"
+msgstr "Textkodierung"
+
+msgid "Version"
+msgstr ""
+
+msgid "UST file version"
+msgstr "UST-Dateiversion"
+
+msgid "Ust"
+msgstr ""
+
+msgid "UTAU Sequence Text"
+msgstr "UTAU Sequenztext"
+
+msgid "Conversion plugin for UST file format"
+msgstr "Konvertierungs-Plugin für das UST-Dateiformat"
+
+msgid "Sder Colin"
+msgstr ""
+
+msgid "No singing track found"
+msgstr "Kein Gesangstrack gefunden"
+
+msgid "Project has no tracks"
+msgstr ""
+
+msgid "No tempo labels found in the imported project."
+msgstr "Keine Tempobezeichnungen im importierten Projekt gefunden."
+

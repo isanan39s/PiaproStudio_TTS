@@ -4,8 +4,8 @@ import json
 import struct
 import uvicorn
 from fastapi import FastAPI, Request, Response
-from LibreSVIPppsf.piapro_studio_legacy_generator import PiaproStudioLegacyGenerator
-from LibreSVIPppsf.options import OutputOptions
+from libresvip.plugins.ppsf.piapro_studio_legacy_generator import PiaproStudioLegacyGenerator
+from libresvip.plugins.ppsf.options import OutputOptions
 from libresvip.model.base import Project, SingingTrack, Note, SongTempo, TimeSignature
 
 # LibreSVIPのパスを通す

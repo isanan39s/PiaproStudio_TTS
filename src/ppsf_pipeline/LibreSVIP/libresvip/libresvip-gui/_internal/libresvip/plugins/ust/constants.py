@@ -1,0 +1,6 @@
+from typing import Final
+
+MODE1_PITCH_SAMPLING_INTERVAL_TICK: Final[int] = 5
+MODE2_PITCH_SAMPLING_INTERVAL_TICK: Final[int] = 4
+MODE2_PITCH_MAX_POINT_COUNT: Final[int] = 50
+MAX_ACCEPTED_BPM: Final[float] = 10000.0

@@ -1,0 +1,35 @@
+msgid ""
+msgstr ""
+"Plural-Forms: nplurals=1; plural=0;\n"
+"X-Crowdin-Project: libresvip\n"
+"X-Crowdin-Project-ID: 645830\n"
+"X-Crowdin-Language: ja\n"
+"X-Crowdin-File: /libresvip/plugins/musicxml/musicxml.po\n"
+"X-Crowdin-File-ID: 462\n"
+"Project-Id-Version: libresvip\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language-Team: Japanese\n"
+"Language: ja_JP\n"
+"PO-Revision-Date: 2026-05-13 06:41\n"
+
+msgid "MusicXML"
+msgstr ""
+
+msgid "MusicXML file"
+msgstr ""
+
+msgid "Conversion plugin for MusicXML Score file"
+msgstr ""
+
+msgid "Sder Colin"
+msgstr ""
+
+msgid "Import tempo changes"
+msgstr ""
+
+msgid "Import dynamics as volume curve"
+msgstr ""
+
+msgid "Extend fermata-bearing notes (matches MuseScore playback)"
+msgstr ""
+

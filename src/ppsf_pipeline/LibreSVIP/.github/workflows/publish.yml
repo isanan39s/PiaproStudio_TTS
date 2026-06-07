@@ -1,0 +1,72 @@
+name: Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_pypi:
+        type: boolean
+        description: 'Publish PyPi Package'
+        required: true
+        default: true
+      publish_docker:
+        type: boolean
+        description: 'Publish Docker Image'
+        required: true
+        default: true
+
+jobs:
+  pypi-publish:
+    runs-on: ubuntu-latest
+    if: ${{ inputs.publish_pypi }}
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.2.0
+
+      - name: Publish to PyPI
+        run: |
+          uv build
+          uv publish
+        env:
+          UV_PUBLISH_USERNAME: __token__
+          UV_PUBLISH_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+
+  docker-publish:
+    strategy:
+      matrix:
+        include:
+          - platform: linux/amd64
+            runs-on: ubuntu-24.04
+          - platform: linux/arm64
+            runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runs-on }}
+    if: ${{ inputs.publish_docker }}
+    permissions:
+      packages: write
+    steps:
+        - name: Set up Docker Buildx
+          uses: docker/setup-buildx-action@v4
+
+        - name: Login to the Container registry
+          uses: docker/login-action@v4
+          with:
+            registry: ghcr.io
+            username: ${{ github.actor }}
+            password: ${{ secrets.GHCR_TOKEN }}
+
+        - name: Extract metadata (tags, labels) for Docker
+          id: meta
+          uses: docker/metadata-action@v6
+          with:
+            images: ghcr.io/soulmelody/libresvip
+
+        - name: Build and push (tags latest)
+          uses: docker/build-push-action@v7
+          with:
+            push: true
+            tags: ${{ steps.meta.outputs.tags }}
+            labels: ${{ steps.meta.outputs.labels }}
+            platforms: ${{ matrix.platform }}

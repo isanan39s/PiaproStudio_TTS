@@ -1,0 +1,32 @@
+msgid ""
+msgstr ""
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"X-Crowdin-Project: libresvip\n"
+"X-Crowdin-Project-ID: 645830\n"
+"X-Crowdin-Language: de\n"
+"X-Crowdin-File: /libresvip/plugins/tlpx/tlpx.po\n"
+"X-Crowdin-File-ID: 562\n"
+"Project-Id-Version: libresvip\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language-Team: German\n"
+"Language: de_DE\n"
+"PO-Revision-Date: 2026-04-30 06:22\n"
+
+msgid "TuneLab"
+msgstr ""
+
+msgid "TuneLab project file"
+msgstr ""
+
+msgid "Conversion plugin for TuneLab project file"
+msgstr ""
+
+msgid "LiuYunPlayer"
+msgstr ""
+
+msgid "Note overlap detected, cutting note "
+msgstr "Notenüberlappung erkannt, Note wird geschnitten "
+
+msgid "Note overlap detected, skipping note "
+msgstr "Notenüberlappung erkannt, Note wird übersprungen "
+

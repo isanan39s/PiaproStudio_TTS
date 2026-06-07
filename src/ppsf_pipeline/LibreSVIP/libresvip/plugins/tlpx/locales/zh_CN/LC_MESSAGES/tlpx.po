@@ -1,0 +1,32 @@
+msgid ""
+msgstr ""
+"Plural-Forms: nplurals=1; plural=0;\n"
+"X-Crowdin-Project: libresvip\n"
+"X-Crowdin-Project-ID: 645830\n"
+"X-Crowdin-Language: zh-CN\n"
+"X-Crowdin-File: /libresvip/plugins/tlpx/tlpx.po\n"
+"X-Crowdin-File-ID: 562\n"
+"Project-Id-Version: libresvip\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language-Team: Chinese Simplified\n"
+"Language: zh_CN\n"
+"PO-Revision-Date: 2026-05-26 00:51\n"
+
+msgid "TuneLab"
+msgstr ""
+
+msgid "TuneLab project file"
+msgstr "TuneLab工程文件"
+
+msgid "Conversion plugin for TuneLab project file"
+msgstr "TuneLab工程格式转换插件"
+
+msgid "LiuYunPlayer"
+msgstr "金刚小刘"
+
+msgid "Note overlap detected, cutting note "
+msgstr "检测到音符重叠，裁剪音符 "
+
+msgid "Note overlap detected, skipping note "
+msgstr "检测到音符重叠，跳过音符 "
+

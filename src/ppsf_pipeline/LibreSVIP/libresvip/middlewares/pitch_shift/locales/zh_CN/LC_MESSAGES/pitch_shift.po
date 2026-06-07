@@ -1,0 +1,26 @@
+msgid ""
+msgstr ""
+"Plural-Forms: nplurals=1; plural=0;\n"
+"X-Crowdin-Project: libresvip\n"
+"X-Crowdin-Project-ID: 645830\n"
+"X-Crowdin-Language: zh-CN\n"
+"X-Crowdin-File: /libresvip/middlewares/pitch_shift/pitch_shift.po\n"
+"X-Crowdin-File-ID: 528\n"
+"Project-Id-Version: libresvip\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language-Team: Chinese Simplified\n"
+"Language: zh_CN\n"
+"PO-Revision-Date: 2026-05-26 00:51\n"
+
+msgid "Key transition of pitch"
+msgstr "音高变化量"
+
+msgid "Pitch shift in semitones."
+msgstr "音高变化（以半音为单位）。"
+
+msgid "Pitch Shift"
+msgstr "音高变调"
+
+msgid "SoulMelody"
+msgstr "岁月静好_初心不忘"
+

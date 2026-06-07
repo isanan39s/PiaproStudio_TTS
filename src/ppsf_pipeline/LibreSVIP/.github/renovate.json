@@ -1,0 +1,46 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "constraints": {
+    "python": "==3.14"
+  },
+  "lockFileMaintenance": {
+    "enabled": true,
+    "recreateWhen": "never"
+  },
+  "rangeStrategy": "bump",
+  "enabledManagers": ["github-actions", "pep621", "pre-commit"],
+  "labels": ["dependencies"],
+  "pre-commit": {
+    "enabled": true
+  },
+  "packageRules": [
+    {
+      "matchManagers": ["pep621"],
+      "matchDepTypes": ["dependency-groups"],
+      "automerge": true,
+      "groupName": "Development dependencies",
+      "groupSlug": "dev"
+    },
+    {
+      "matchManagers": ["pep621"],
+      "matchDepTypes": ["project.dependencies", "project.optional-dependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true,
+      "groupName": "Project dependencies",
+      "groupSlug": "proj"
+    },
+    {
+      "groupName": "GitHub runners",
+      "matchManagers": ["github-actions"],
+      "matchDatasources": ["github-runners"],
+      "enabled": false
+    },
+    {
+      "groupName": "pre-commit dependencies",
+      "matchManagers": ["pre-commit"]
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+msgid "UFData"
+msgstr ""
+
+msgid "UtaFormatix3 data format"
+msgstr ""
+
+msgid "Conversion plugin for UFData format"
+msgstr ""
+
+msgid "Sder Colin"
+msgstr ""
+

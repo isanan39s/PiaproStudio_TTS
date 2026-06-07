@@ -1,0 +1,7 @@
+[Core]
+name = Remove Short Silences
+
+[Documentation]
+Author = SoulMelody
+Website = https://space.bilibili.com/175862486
+Description = Fill short rests

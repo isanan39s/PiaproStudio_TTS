@@ -1,0 +1,108 @@
+import QtQuick
+import QtQuick.Window
+import QtQuick.Controls.Material
+import FramelessWindow
+import "qrc:/qml/components/" as Components
+
+ApplicationWindow {
+    id: window
+    title: qsTr("LibreSVIP")
+    visible: true
+    minimumWidth: 700
+    minimumHeight: 600
+    width: 1200
+    height: 800
+    property bool yesToAll: false
+    property bool noToAll: false
+    property var configItems
+    property var clipboard
+    property var iconicFontLoader
+    property var localeSwitcher
+    property var notifier
+    property var taskManager
+    property alias framelessHelperInstance: framelessHelper
+    flags: Qt.WindowMaximizeButtonHint
+    color: "transparent"
+    Material.primary: "#FF5722"
+    Material.accent: "#3F51B5"
+    Material.theme: {
+        switch (configItems.theme) {
+        case "Dark":
+            return Material.Dark;
+        case "Light":
+            return Material.Light;
+        default:
+            return Material.System;
+        }
+    }
+
+    FramelessHelper {
+        id: framelessHelper
+    }
+
+    Components.Dialogs {
+        id: dialogs
+    }
+
+    Components.Actions {
+        id: actions
+    }
+
+    Components.ConverterPage {
+        id: converterPage
+        header: Components.TopToolbar {
+            id: toolbar
+            Component.onCompleted: {
+                framelessHelper.titlebar_item = toolbar.titleLabel;
+                framelessHelper.maximize_button = toolbar.maximizeBtn;
+            }
+        }
+        anchors.fill: parent
+        anchors.margins: 0
+    }
+
+    Component {
+        id: messageBox
+        Components.MessageBox {}
+    }
+
+    function handleThemeChange(theme) {
+        switch (theme) {
+        case "Light":
+            window.Material.theme = Material.Light;
+            configItems.theme = "Light";
+            break;
+        case "Dark":
+            window.Material.theme = Material.Dark;
+            configItems.theme = "Dark";
+            break;
+        case "System":
+            window.Material.theme = Material.System;
+            configItems.theme = "System";
+            break;
+        }
+    }
+
+    Connections {
+        target: Application.styleHints
+        function onColorSchemeChanged(value) {
+            let currentTheme = configItems.theme;
+            if (currentTheme === "System") {
+                handleThemeChange(currentTheme);
+            }
+        }
+    }
+
+    Connections {
+        target: configItems
+        function onAuto_set_output_extension_changed(value) {
+            taskManager.reset_output_ext("");
+        }
+    }
+
+    Component.onCompleted: {
+        if (configItems.auto_check_for_updates) {
+            notifier.check_for_updates();
+        }
+    }
+}

@@ -1,0 +1,36 @@
+msgid "None"
+msgstr ""
+
+msgid "Hanzi to Pinyin"
+msgstr ""
+
+msgid "Hanzi to Jyutping"
+msgstr ""
+
+msgid "Hangul to Romanization"
+msgstr ""
+
+msgid "Kana to Romaji"
+msgstr ""
+
+msgid "To Hiragana"
+msgstr ""
+
+msgid "To Katakana"
+msgstr ""
+
+msgid "Pronounciation conversion mode"
+msgstr ""
+
+msgid "Convert lyrics to the specified pronounciation format"
+msgstr ""
+
+msgid "Pronounciation Conversion"
+msgstr ""
+
+msgid "For Chinese and Japanese Lyrics"
+msgstr ""
+
+msgid "SoulMelody"
+msgstr ""
+

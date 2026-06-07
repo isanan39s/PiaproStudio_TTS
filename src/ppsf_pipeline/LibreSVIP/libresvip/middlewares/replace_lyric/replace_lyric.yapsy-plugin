@@ -1,0 +1,7 @@
+[Core]
+name = Replace lyrics
+
+[Documentation]
+Author = SoulMelody
+Website = https://space.bilibili.com/175862486
+Description = Replace lyrics using preset rules. You can customize the lyrics replacement rules in the program configuration page

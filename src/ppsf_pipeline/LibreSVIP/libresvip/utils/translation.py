@@ -1,0 +1,50 @@
+import contextlib
+import contextvars
+import gettext
+import os
+import sys
+
+from that_depends import BaseContainer, Provide, inject, providers
+
+singleton_translation: gettext.NullTranslations | None = None
+lazy_translation: contextvars.ContextVar[gettext.NullTranslations | None] = contextvars.ContextVar(
+    "translator"
+)
+
+
+class TranslationContainer(BaseContainer):
+    translation = providers.Selector(
+        lambda: os.getenv("LIBRESVIP_SETTINGS_BACKEND", "local"),
+        local=providers.Factory(lambda: singleton_translation),
+        remote=providers.Factory(lazy_translation.get),
+    )
+
+
+@inject
+def create_translation(
+    translation: gettext.NullTranslations | None = Provide[TranslationContainer.translation],
+) -> gettext.NullTranslations | None:
+    return translation
+
+
+def gettext_lazy(message: str) -> str:
+    if not message:
+        return message
+    with contextlib.suppress(LookupError):
+        if (translation := create_translation()) is not None:
+            return translation.gettext(message)
+    return gettext.gettext(message)
+
+
+def pgettext_lazy(context: str | None, message: str) -> str:
+    if context is None:
+        frame = sys._getframe(1)
+        context = frame.f_globals.get("__package__")
+    if context is None:
+        return gettext_lazy(message)
+    if not message:
+        return message
+    with contextlib.suppress(LookupError):
+        if (translation := create_translation()) is not None:
+            return translation.pgettext(context, message)
+    return gettext.pgettext(context, message)

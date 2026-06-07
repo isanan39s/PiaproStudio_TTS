@@ -1,0 +1,30 @@
+msgid "Text encoding"
+msgstr ""
+
+msgid "Version"
+msgstr ""
+
+msgid "UST file version"
+msgstr ""
+
+msgid "Ust"
+msgstr ""
+
+msgid "UTAU Sequence Text"
+msgstr ""
+
+msgid "Conversion plugin for UST file format"
+msgstr ""
+
+msgid "Sder Colin"
+msgstr ""
+
+msgid "No singing track found"
+msgstr ""
+
+msgid "Project has no tracks"
+msgstr ""
+
+msgid "No tempo labels found in the imported project."
+msgstr ""
+

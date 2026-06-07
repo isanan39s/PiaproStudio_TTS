@@ -1,0 +1,9 @@
+[Core]
+name = VX-β
+
+[Documentation]
+Author = SoulMelody
+Website = https://space.bilibili.com/175862486
+Format = VX-β project file
+Description = Conversion plugin for VX-β project file
+Suffix = vxf

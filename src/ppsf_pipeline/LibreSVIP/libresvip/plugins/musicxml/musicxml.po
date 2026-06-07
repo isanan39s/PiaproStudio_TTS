@@ -1,0 +1,21 @@
+msgid "MusicXML"
+msgstr ""
+
+msgid "MusicXML file"
+msgstr ""
+
+msgid "Conversion plugin for MusicXML Score file"
+msgstr ""
+
+msgid "Sder Colin"
+msgstr ""
+
+msgid "Import tempo changes"
+msgstr ""
+
+msgid "Import dynamics as volume curve"
+msgstr ""
+
+msgid "Extend fermata-bearing notes (matches MuseScore playback)"
+msgstr ""
+
