@@ -56,11 +56,11 @@
 #include <sys/types.h>
 #endif
 
-#ifdef HAVE_DIRENT_H
+#if defined(HAVE_DIRENT_H) || !defined(_WIN32)
 #include <dirent.h>
 #endif
 
-#ifdef HAVE_WINDOWS_H
+#if defined(_WIN32) && !defined(__CYGWIN__)
 #ifndef NOMINMAX /* for Open JTalk */
 #define NOMINMAX
 #endif /* for Open JTalk */

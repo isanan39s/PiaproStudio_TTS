@@ -30,9 +30,7 @@ typedef unsigned long long uint64_t;
 #include <stdint.h>
 #endif  // _MSC_VER
 #else   // _WIN32
-typedef unsigned char uint8_t;
-typedef unsigned long uint32_t;
-typedef unsigned __int64 uint64_t;
+#include <stdint.h>
 #endif  // _WIN32
 #endif  // HAVE_STDINT_H
 

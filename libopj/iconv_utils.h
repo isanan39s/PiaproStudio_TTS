@@ -54,8 +54,8 @@
 /* for Open JTalk
 #if defined(_WIN32) && !defined(__CYGWIN__)
 */
-#ifdef HAVE_WINDOWS_H /* for Open JTalk */
-#include "windows.h"
+#if defined(_WIN32) && !defined(__CYGWIN__)
+#include <windows.h>
 #endif
 
 namespace MeCab {
@@ -71,7 +71,7 @@ class Iconv {
 /* for Open JTalk
 #if defined(_WIN32) && !defined(__CYGWIN__)
 */
-#ifdef HAVE_WINDOWS_H /* for Open JTalk */
+#if defined(_WIN32) && !defined(__CYGWIN__)
   DWORD from_cp_;
   DWORD to_cp_;
 #endif

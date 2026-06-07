@@ -62,8 +62,8 @@
 /* for Open JTalk
 #if defined(_WIN32) && !defined(__CYGWIN__)
 */
-#ifdef HAVE_WINDOWS_H /* for Open JTalk */
-#include "windows.h"
+#if defined(_WIN32) && !defined(__CYGWIN__)
+#include <windows.h>
 #endif
 
 namespace {
@@ -96,7 +96,7 @@ const char * decode_charset_iconv(const char *str) {
 /* for Open JTalk
 #if defined(_WIN32) && !defined(__CYGWIN__)
 */
-#ifdef HAVE_WINDOWS_H /* for Open JTalk */
+#if defined(_WIN32) && !defined(__CYGWIN__)
 DWORD decode_charset_win32(const char *str) {
   const int charset = MeCab::decode_charset(str);
   switch (charset) {
@@ -142,7 +142,7 @@ bool Iconv::open(const char* from, const char* to) {
 /* for Open JTalk
 #if defined(_WIN32) && !defined(__CYGWIN__)
 */
-#ifdef HAVE_WINDOWS_H /* for Open JTalk */
+#if defined(_WIN32) && !defined(__CYGWIN__)
   from_cp_ = decode_charset_win32(from);
   to_cp_ = decode_charset_win32(to);
   if (from_cp_ == to_cp_) {
@@ -191,7 +191,7 @@ bool Iconv::convert(std::string *str) {
 /* for Open JTalk
 #if defined(_WIN32) && !defined(__CYGWIN__)
 */
-#ifdef HAVE_WINDOWS_H /* for Open JTalk */
+#if defined(_WIN32) && !defined(__CYGWIN__)
   // covert it to wide character first
   const size_t wide_len = ::MultiByteToWideChar(from_cp_, 0,
                                                 str->c_str(),
@@ -241,7 +241,6 @@ bool Iconv::convert(std::string *str) {
   }
 
   str->assign(encoded.get());
-
 #endif
 #endif
 

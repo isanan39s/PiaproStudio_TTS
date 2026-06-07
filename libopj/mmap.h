@@ -13,6 +13,15 @@
 #include "config.h"
 #endif
 
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
+#ifndef _WIN32
+#include <unistd.h>
+#include <sys/mman.h>
+#endif
+
 extern "C" {
 
 #ifdef HAVE_SYS_TYPES_H
