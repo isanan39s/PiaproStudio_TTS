@@ -6,34 +6,29 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"openjtalk-go/libopj"
 	"os"
 )
 
 type NoteReq struct {
-	Tick     int32  `json:"tick"`
-	Pitch    int    `json:"pitch"`
-	Dur      int32  `json:"dur"`
-	Lyric    string `json:"lyric"`
-	Phoneme  string `json:"phoneme"`
+	Tick    int32  `json:"tick"`
+	Pitch   int    `json:"pitch"`
+	Dur     int32  `json:"dur"`
+	Lyric   string `json:"lyric"`
+	Phoneme string `json:"phoneme"`
 }
 
-func main() {
-	// かえるのうた 全14音
-	melody := []NoteReq{
-		{1920, 60, 480, "か", "k a"}, {2400, 62, 480, "え", "e"},
-		{2880, 64, 480, "る", "4 M"}, {3360, 65, 480, "の", "n o"},
-		{3840, 67, 480, "う", "M"}, {4320, 69, 480, "た", "t a"},
-		{4800, 71, 480, "が", "g a"}, {5280, 69, 480, "き", "k i"},
-		{5760, 67, 480, "こ", "k o"}, {6240, 65, 480, "え", "e"},
-		{6720, 64, 480, "て", "t e"}, {7200, 62, 480, "く", "k M"},
-		{7680, 60, 480, "る", "4 M"}, {8160, 59, 960, "よ", "j o"},
-	}
-
+// RequestPPSFGeneration sends notes to the PPSF generator API and saves the resulting bin file.
+func RequestPPSFGeneration(notes []NoteReq, outputFilename string) {
 	req := map[string]interface{}{
-		"output": "frog_song_full.ppsf.bin",
-		"notes":  melody,
+		"output": outputFilename,
+		"notes":  notes,
 	}
-	reqBytes, _ := json.Marshal(req)
+	reqBytes, err := json.Marshal(req)
+	if err != nil {
+		fmt.Println("JSON Marshal Error:", err)
+		return
+	}
 
 	resp, err := http.Post("http://127.0.0.1:8000/generate", "application/json", bytes.NewBuffer(reqBytes))
 	if err != nil {
@@ -42,7 +37,94 @@ func main() {
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
-	os.WriteFile("frog_song_full.ppsf.bin", body, 0644)
-	fmt.Printf("Success! Generated frog_song_full.ppsf.bin (%d bytes)\n", len(body))
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Println("Read Body Error:", err)
+		return
+	}
+	err = os.WriteFile(outputFilename, body, 0644)
+	if err != nil {
+		fmt.Println("Write File Error:", err)
+		return
+	}
+	fmt.Printf("Success! Generated %s (%d bytes)\n", outputFilename, len(body))
+}
+
+func ConvertToNotes(morphemes []libopj.Morpheme, baseTick int32) ([]NoteReq, int32) {
+	var notes []NoteReq
+	currentTick := baseTick
+
+	// 1モーラあたりの長さ (200ms = 192 dur)
+	const moraDur int32 = 192
+	// 基準ピッチ (MIDIノート番号 60 = C4)
+	const basePitch int = 60
+
+	for _, m := range morphemes {
+		pron := m.Pronunciation
+		runes := []rune(pron)
+		var moras []string
+
+		// モーラ分解 (カタカナの拗音などを考慮)
+		for i := 0; i < len(runes); i++ {
+			mora := string(runes[i])
+			if i+1 < len(runes) {
+				next := runes[i+1]
+				// ャュョ などの小書きカタカナを判定
+				if next == 'ァ' || next == 'ィ' || next == 'ゥ' || next == 'ェ' || next == 'ォ' ||
+					next == 'ャ' || next == 'ュ' || next == 'ョ' || next == 'ヮ' {
+					mora += string(next)
+					i++
+				}
+			}
+			moras = append(moras, mora)
+		}
+
+		for i, mora := range moras {
+			moraIdx := i + 1
+
+			// ピッチの計算
+			pitch := basePitch
+			if m.Accent == 0 {
+				if moraIdx != 1 {
+					pitch = basePitch + 4
+				}
+			} else if m.Accent == 1 {
+				if moraIdx == 1 {
+					pitch = basePitch + 4
+				}
+			} else {
+				if moraIdx >= 2 && moraIdx <= m.Accent {
+					pitch = basePitch + 4
+				}
+			}
+
+			ph, exists := kanaToPhoneme[mora]
+			if !exists {
+				ph = "u n k"
+			}
+
+			notes = append(notes, NoteReq{
+				Tick:    currentTick,
+				Pitch:   pitch,
+				Dur:     moraDur,
+				Lyric:   mora,
+				Phoneme: ph,
+			})
+			currentTick += moraDur
+		}
+
+		// 読点や助詞の後に短いポーズ
+		if m.POS == "記号" || m.POS == "助詞" {
+			notes = append(notes, NoteReq{
+				Tick:    currentTick,
+				Pitch:   0,
+				Dur:     96,
+				Lyric:   "、",
+				Phoneme: "pau",
+			})
+			currentTick += 96
+		}
+	}
+
+	return notes, currentTick
 }

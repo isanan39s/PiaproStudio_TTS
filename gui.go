@@ -25,7 +25,6 @@ type MyMainWindow struct {
 	closing       chan struct{}
 	dumpCount     int
 	pulgpath      string
-
 }
 
 func getNextDumpCount() int {
@@ -272,6 +271,13 @@ func NewGUI(bus *BusHQdat) *MyMainWindow {
 						OnTriggered: func() {
 							mw.bus.sendMsg(MsgBus{Cmd: "close", To: "vst_host", From: "gui"})
 							mw.Close()
+						},
+					},
+					Action{
+						Text: "genppsf",
+						OnTriggered: func() {
+							mw.bus.sendMsg(MsgBus{Cmd: "genppsf", To: "txt2ppsf", From: "gui", Option: []string{"こんにちは"}})
+
 						},
 					},
 				},

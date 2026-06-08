@@ -121,7 +121,6 @@ func (h *VstHost) loop() {
 				h.syncFunc(func() { h.loadPlugin(msg.Option[0], msg.Option[1]) })
 			}
 
-
 		case "set_output_conf":
 			tmp := msg.Option[0]
 			if tmp == "false" {
@@ -416,7 +415,7 @@ func (h *VstHost) loadPlugin(path string, hwndStr string) {
 	v, _ := vst2.Open(path)
 	h.vst = v
 	plugin := v.Plugin(func(op vst2.HostOpcode, index int32, value int64, ptr unsafe.Pointer, opt float32) int64 {
-		println("[hostcallback] opcode ",op,index,value)
+		println("[hostcallback] opcode ", op, index, value)
 		switch op {
 		case vst2.HostVersion:
 			return 2400

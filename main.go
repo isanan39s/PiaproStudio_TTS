@@ -1,12 +1,30 @@
 package main
 
-import "os"
+import (
+	"net/http"
+	"os"
+)
 
 func main() {
 	// メッセージバスの初期化
 	msgChan := make(chan MsgBus, 100)
 	endChan := make(chan struct{})
 	bus := BusHQ(msgChan, endChan)
+
+	go opjt_main(bus, "")
+
+	mux := http.NewServeMux()
+
+	apiserver := &APIserver{
+		toBus : make(chan MsgBus, 100),
+		bus:bus,
+	}
+
+
+	bus.registAddr("api", apiserver.toBus)
+	mux.HandleFunc("/",apiserver.entry)
+
+	go http.ListenAndServe(":8080", mux)
 
 	// GUIの初期化 (ウィンドウ作成)
 	mw := NewGUI(bus)
