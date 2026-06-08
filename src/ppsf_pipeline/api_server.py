@@ -2,8 +2,9 @@ import sys
 import os
 import json
 import struct
+import time 
 import uvicorn
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response, BackgroundTasks
 from libresvip.plugins.ppsf.piapro_studio_legacy_generator import PiaproStudioLegacyGenerator
 from libresvip.plugins.ppsf.options import OutputOptions
 from libresvip.model.base import Project, SingingTrack, Note, SongTempo, TimeSignature
@@ -82,6 +83,15 @@ async def generate(req: Request):
     struct.pack_into("<I", final_binary, 4, len(final_binary)-8)
     
     return Response(content=bytes(final_binary), media_type="application/octet-stream")
+
+def terminate():
+    time.sleep(0.5) # Go側がレスポンスを受け取るためのわずかな猶予
+    os._exit(0)     # プロセスを即座に完全終了させる
+
+@app.get("/quit")
+def killprosess(background_tasks: BackgroundTasks):
+    background_tasks.add_task(terminate)
+    return {"status": "shutdown"}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)

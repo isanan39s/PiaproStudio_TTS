@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"net/http"
 
 	"text/tabwriter"
 
@@ -29,11 +30,16 @@ func opjt_main(bus *BusHQdat, dicpath string) {
 		// Windows環境での仮想環境のPythonパス
 		pythonPath := `src\ppsf_pipeline\LibreSVIP\venv\Scripts\python.exe`
 		cmd := exec.Command(pythonPath, `src\ppsf_pipeline\api_server.py`)
+		cmd.Stdout = os.Stdout
+    	cmd.Stderr = os.Stderr
 		if err := cmd.Start(); err != nil {
 			fmt.Fprintf(os.Stderr, "PPSF APIサーバーの起動に失敗しました (Path: %s): %v\n", pythonPath, err)
 		} else {
 			fmt.Println("PPSF APIサーバーを起動しました。")
 		}
+		if err := cmd.Wait(); err != nil {
+        fmt.Fprintf(os.Stderr, "サーバーが異常終了しました: %v\n", err)
+    }
 	}()
 
 	// msgBus加盟
@@ -83,6 +89,18 @@ func opjt_main(bus *BusHQdat, dicpath string) {
 				outputFile = msg.Option[1]
 			}
 			RequestPPSFGeneration(notes, outputFile)
+		
+		case "kill":
+			resp, err := http.Get("http://127.0.0.1:8000/quit")
+	if err != nil {
+		// すでに死んでいる、または接続できない場合
+		fmt.Fprintf(os.Stderr, "サーバー終了リクエストに失敗（すでに終了している可能性があります）: %v\n", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	fmt.Println("Pythonサーバーへ終了シグナルを送信しました。")
+
 		}
 
 	}

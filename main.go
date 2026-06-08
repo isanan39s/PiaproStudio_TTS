@@ -16,13 +16,12 @@ func main() {
 	mux := http.NewServeMux()
 
 	apiserver := &APIserver{
-		toBus : make(chan MsgBus, 100),
-		bus:bus,
+		toBus: make(chan MsgBus, 100),
+		bus:   bus,
 	}
 
-
 	bus.registAddr("api", apiserver.toBus)
-	mux.HandleFunc("/",apiserver.entry)
+	mux.HandleFunc("/", apiserver.entry)
 
 	go http.ListenAndServe(":8080", mux)
 
@@ -35,6 +34,7 @@ func main() {
 
 	// メインループの開始 (ウィンドウが閉じられるまでブロック)
 	mw.Run()
+	bus.sendMsg(MsgBus{	To: "txt2ppsf",	Cmd: "kill",})
 
 	// ウィンドウが閉じられた後、プロセスを確実に終了させる
 	os.Exit(0)

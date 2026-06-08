@@ -1,5 +1,5 @@
 
-# * LibreSVIPは[こちら](https://github.com/SoulMelody/LibreSVIP)をダウンロードし、改造したものです わたしは作っていません *
+# LibreSVIPは[こちら](https://github.com/SoulMelody/LibreSVIP)をダウンロードし、改造したものです わたしは作っていません 
 
 
 

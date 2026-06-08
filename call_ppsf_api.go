@@ -118,7 +118,7 @@ func ConvertToNotes(morphemes []libopj.Morpheme, baseTick int32) ([]NoteReq, int
 			notes = append(notes, NoteReq{
 				Tick:    currentTick,
 				Pitch:   0,
-				Dur:     96,
+				Dur:     75,
 				Lyric:   "、",
 				Phoneme: "pau",
 			})

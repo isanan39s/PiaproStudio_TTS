@@ -151,12 +151,12 @@ PROJECT_DATA = {
         "vocaloid2_singers": [],
         "vocaloid3_singers": [
             {
-                "singer_id": "MIKU_V4_CHINESE",
-                "singer_name": "MIKU_V4_Chinese",
+                "singer_id": "MIKU_V4X_Original_EVEC",
+                "singer_name": "MIKU_V4X_Original_EVEC",
                 "unknown1": 0,
                 "unknown2": 4,
                 "voice_setting": {
-                    "name": "BNGE7CP7EMTRSNC3",
+                    "name": "BCNFCY43LB2LZCD4",
                     "parameters": {
                         "param1": 0,
                         "param2": 0,

@@ -713,6 +713,9 @@ class PiaproStudioLegacyGenerator:
             first_bar_length = TICKS_IN_BEAT * 4
         synchronizer = TimeSynchronizer(project.song_tempo_list)
 
+
+        print(tpl)
+        
         events: list[dict] = []
         note_clip_dicts: list[dict] = []
 

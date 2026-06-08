@@ -25,6 +25,7 @@ type MyMainWindow struct {
 	closing       chan struct{}
 	dumpCount     int
 	pulgpath      string
+	ttsinput      *walk.LineEdit
 }
 
 func getNextDumpCount() int {
@@ -210,6 +211,29 @@ func NewGUI(bus *BusHQdat) *MyMainWindow {
 				MinSize:            Size{Height: 200},
 				AlwaysConsumeSpace: true,
 			},
+			Composite{
+				Layout: VBox{MarginsZero: true},
+				Children: []Widget{
+
+					HSplitter{
+						Children: []Widget{
+							LineEdit{
+								AssignTo: &mw.ttsinput,
+							},
+
+							PushButton{
+								Text: "生成",
+								OnClicked: func() {
+									mw.bus.sendMsg(MsgBus{
+										Cmd:    "genppsf",
+										To:     "txt2ppsf",
+										Option: []string{mw.ttsinput.Text()}})
+								},
+							},
+						},
+					},
+				},
+			},
 
 			// --- ステータスエリア ---
 			Label{
@@ -307,6 +331,8 @@ func NewGUI(bus *BusHQdat) *MyMainWindow {
 	// Closingイベントを別途アタッチ
 	mw.Closing().Attach(func(canClose *bool, reason walk.CloseReason) {
 		close(mw.closing)
+		mw.bus.sendMsg(MsgBus{	To: "txt2ppsf",	Cmd: "kill",})
+
 		mw.bus.sendMsg(MsgBus{Cmd: "close", To: "vst_host", From: "gui"})
 	})
 

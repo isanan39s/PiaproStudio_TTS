@@ -156,7 +156,7 @@ PROJECT_DATA = {
                 "unknown1": 0,
                 "unknown2": 4,
                 "voice_setting": {
-                    "name": "BNGE7CP7EMTRSNC3",
+                    "name": "BCNFCY43LB2LZCD4",
                     "parameters": {
                         "param1": 0,
                         "param2": 0,
