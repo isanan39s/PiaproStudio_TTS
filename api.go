@@ -35,7 +35,7 @@ func (api *APIserver) entry(w http.ResponseWriter, r *http.Request) {
 		Option: req.Option,
 	}
 	api.bus.sendMsg(msg)
-	println(msg.Option[0])
+	println(r, msg.Option[0])
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "dispatched"})

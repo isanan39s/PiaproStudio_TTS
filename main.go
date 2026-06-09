@@ -33,15 +33,14 @@ func main() {
 	NewVstHost(bus, mw.Synchronize)
 	println("inited host")
 
-
 	go func() {
-			time.Sleep(100 * time.Millisecond)
-				mw.onLoadPlugin()
+		time.Sleep(100 * time.Millisecond)
+		mw.onLoadPlugin()
 
 	}()
 	// メインループの開始 (ウィンドウが閉じられるまでブロック)
 	mw.Run()
-	bus.sendMsg(MsgBus{	To: "txt2ppsf",	Cmd: "kill",})
+	bus.sendMsg(MsgBus{To: "txt2ppsf", Cmd: "kill"})
 
 	// ウィンドウが閉じられた後、プロセスを確実に終了させる
 	os.Exit(0)

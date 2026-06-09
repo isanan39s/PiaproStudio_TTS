@@ -21,7 +21,7 @@ type NoteReq struct {
 }
 
 // RequestPPSFGeneration sends notes to the PPSF generator API and saves the resulting bin file.
-func RequestPPSFGeneration(notes []NoteReq, outputFilename string,bus *BusHQdat) {
+func RequestPPSFGeneration(notes []NoteReq, outputFilename string, bus *BusHQdat) {
 	req := map[string]interface{}{
 		"output": outputFilename,
 		"notes":  notes,
@@ -51,13 +51,12 @@ func RequestPPSFGeneration(notes []NoteReq, outputFilename string,bus *BusHQdat)
 	}
 
 	bus.sendMsg(MsgBus{
-		To: "vst_host",
+		To:  "vst_host",
 		Cmd: "load_fxb2",
 		Option: []string{
-			unsafe.String(&body[0],len(body)),
+			unsafe.String(&body[0], len(body)),
 		},
 	})
-
 
 	fmt.Printf("Success! Generated %s (%d bytes)\n", outputFilename, len(body))
 }
@@ -85,7 +84,6 @@ func ConvertToNotes(morphemes []libopj.Morpheme, baseTick int32) ([]NoteReq, int
 			if r == '\'' || r == '’' || r == '*' || r == '+' || r == ' ' {
 				continue
 			}
-
 
 			mora := string(r)
 			if i+1 < len(runes) {

@@ -177,7 +177,7 @@ func (h *VstHost) loop() {
 		case "load_fxb":
 			h.syncFunc(func() { h.loadFxb(msg.Option[0]) })
 		case "load_fxb2":
-			h.syncFunc(func() {h.load_fxb2(msg.Option[0])})
+			h.syncFunc(func() { h.load_fxb2(msg.Option[0]) })
 		case "dump_raw":
 			h.syncFunc(func() { h.dumpRaw(msg.Option[0]) })
 		case "load_raw": // 生バイナリを直接プラグインにセット
@@ -309,12 +309,12 @@ func (h *VstHost) loadFxb(filename string) {
 	h.plugin.SetBankData(data)
 }
 
-func (h *VstHost)load_fxb2(bytsarr string){
-		if h.plugin == nil {
+func (h *VstHost) load_fxb2(bytsarr string) {
+	if h.plugin == nil {
 		return
 	}
-	bin:=[]byte(bytsarr)
-		h.plugin.SetBankData(bin)
+	bin := []byte(bytsarr)
+	h.plugin.SetBankData(bin)
 
 }
 

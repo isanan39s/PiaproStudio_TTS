@@ -2,11 +2,11 @@ package main
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
-	"net/http"
-
 	"text/tabwriter"
+	"time"
 
 	"openjtalk-go/libopj"
 )
@@ -31,15 +31,15 @@ func opjt_main(bus *BusHQdat, dicpath string) {
 		pythonPath := `python-3.14.5-embed-amd64\python.exe`
 		cmd := exec.Command(pythonPath, `ppsf_pipeline\api_server.py`)
 		cmd.Stdout = os.Stdout
-    	cmd.Stderr = os.Stderr
+		cmd.Stderr = os.Stderr
 		if err := cmd.Start(); err != nil {
 			fmt.Fprintf(os.Stderr, "PPSF APIサーバーの起動に失敗しました (Path: %s): %v\n", pythonPath, err)
 		} else {
 			fmt.Println("PPSF APIサーバーを起動しました。")
 		}
 		if err := cmd.Wait(); err != nil {
-        fmt.Fprintf(os.Stderr, "サーバーが異常終了しました: %v\n", err)
-    }
+			fmt.Fprintf(os.Stderr, "サーバーが異常終了しました: %v\n", err)
+		}
 	}()
 
 	// msgBus加盟
@@ -73,6 +73,15 @@ func opjt_main(bus *BusHQdat, dicpath string) {
 	for msg := range toBus {
 
 		switch msg.Cmd {
+		case "say":
+			bus.sendMsg(MsgBus{Cmd: "stop", To: "vst_host", From: "gui"})
+			go func() {
+				bus.sendMsg(MsgBus{Cmd: "genppsf", To: "txt2ppsf", From: msg.From, Option: msg.Option})
+				time.Sleep(500 * time.Millisecond)	
+				bus.sendMsg(MsgBus{To: "vst_host", From: "txt2ppsf", Cmd: "seek_ppq", Option: []string{"0"}})
+				bus.sendMsg(MsgBus{Cmd: "play", To: "vst_host", From: msg.From})
+			}()
+
 		case "genppsf":
 			text := msg.Option[0]
 			morphemes, err := engine.Analyze(text)
@@ -84,22 +93,22 @@ func opjt_main(bus *BusHQdat, dicpath string) {
 
 			// PPSF生成への連携
 			notes, _ := ConvertToNotes(morphemes, 1920) // 1920 tick から開始
-			outputFile := text+".bin"
+			outputFile := text + ".bin"
 			if len(msg.Option) > 1 {
 				outputFile = msg.Option[1]
 			}
-			RequestPPSFGeneration(notes, outputFile,bus)
-		
+			RequestPPSFGeneration(notes, outputFile, bus)
+
 		case "kill":
 			resp, err := http.Get("http://127.0.0.1:8000/quit")
-	if err != nil {
-		// すでに死んでいる、または接続できない場合
-		fmt.Fprintf(os.Stderr, "サーバー終了リクエストに失敗（すでに終了している可能性があります）: %v\n", err)
-		return
-	}
-	defer resp.Body.Close()
+			if err != nil {
+				// すでに死んでいる、または接続できない場合
+				fmt.Fprintf(os.Stderr, "サーバー終了リクエストに失敗（すでに終了している可能性があります）: %v\n", err)
+				return
+			}
+			defer resp.Body.Close()
 
-	fmt.Println("Pythonサーバーへ終了シグナルを送信しました。")
+			fmt.Println("Pythonサーバーへ終了シグナルを送信しました。")
 
 		}
 

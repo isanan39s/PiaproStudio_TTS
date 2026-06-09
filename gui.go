@@ -331,7 +331,7 @@ func NewGUI(bus *BusHQdat) *MyMainWindow {
 	// Closingイベントを別途アタッチ
 	mw.Closing().Attach(func(canClose *bool, reason walk.CloseReason) {
 		close(mw.closing)
-		mw.bus.sendMsg(MsgBus{	To: "txt2ppsf",	Cmd: "kill",})
+		mw.bus.sendMsg(MsgBus{To: "txt2ppsf", Cmd: "kill"})
 
 		mw.bus.sendMsg(MsgBus{Cmd: "close", To: "vst_host", From: "gui"})
 	})
