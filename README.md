@@ -2,20 +2,28 @@
 ミクさんたちを喋らせたい
 
 構成
-⦁	piaplostudio v4x,vst2.4
-⦁	voicevoxエンジン,httpapi
-⦁	ホスト,上2つとwav出力
+⦁	piaplostudio v4x,vst2.4  
+⦁	~voicevoxエンジン~ ,httpapi  
+⦁	ホスト,上2つとwav出力  
+
+## 要求
+piaprostudio v4xと有効なライセンスで認証され使えるVOCALOID4ボイスバンク
+
+##how to use
+1. git clone  
+2. go run .  
+3. ネットワークの許可求められたら許してあげて 
 
 今回のホスト
-1.	(汎用的な日本語入力(エンジンにリクエスト投げるだけ？))
-2.	openjtalkからのクエリをppsf形式+@パラメータに変換
+1.	(汎用的な日本語入力(エンジンにリクエスト投げるだけ？))  
+2.	openjtalkからのクエリをppsf形式+@パラメータに変換  
 
 ## thanks
 このプログラムは以下のプロジェクト？を活用させていただいています
-- [openjtalk](https://open-jtalk.sourceforge.net/) 漢字->かな&イントネーション取得に
-- [LibreSVIP](https://github.com/SoulMelody/LibreSVIP) ppsfバイナリ生成に
+- [openjtalk](https://open-jtalk.sourceforge.net/) 漢字->かな&イントネーション取得に  
+- [LibreSVIP](https://github.com/SoulMelody/LibreSVIP) ppsfバイナリ生成に  
 
-勝手に使って何だってとこかもしれませんが ありがとうございます
+勝手に使って何だってとこかもしれませんが ありがとうございます  
 
 
 ---
