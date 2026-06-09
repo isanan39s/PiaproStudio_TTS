@@ -28,8 +28,8 @@ func opjt_main(bus *BusHQdat, dicpath string) {
 	// Python APIサーバーの起動
 	go func() {
 		// Windows環境での仮想環境のPythonパス
-		pythonPath := `src\ppsf_pipeline\LibreSVIP\venv\Scripts\python.exe`
-		cmd := exec.Command(pythonPath, `src\ppsf_pipeline\api_server.py`)
+		pythonPath := `python-3.14.5-embed-amd64\python.exe`
+		cmd := exec.Command(pythonPath, `ppsf_pipeline\api_server.py`)
 		cmd.Stdout = os.Stdout
     	cmd.Stderr = os.Stderr
 		if err := cmd.Start(); err != nil {
