@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"openjtalk-go/libopj"
 	"os"
+	"strings"
 	"unsafe"
 )
 
@@ -70,6 +71,8 @@ func ConvertToNotes(morphemes []libopj.Morpheme, baseTick int32) ([]NoteReq, int
 	// 基準ピッチ (MIDIノート番号 60 = C4)
 	const basePitch int = 60
 
+	var lastVowel string // 前のモーラの母音を記憶
+
 	for _, m := range morphemes {
 		pron := m.Pronunciation
 		runes := []rune(pron)
@@ -77,7 +80,14 @@ func ConvertToNotes(morphemes []libopj.Morpheme, baseTick int32) ([]NoteReq, int
 
 		// モーラ分解 (カタカナの拗音などを考慮)
 		for i := 0; i < len(runes); i++ {
-			mora := string(runes[i])
+			r := runes[i]
+			// アクセント記号や特殊記号（' , ’ , * , + など）は音符ではないためスキップ
+			if r == '\'' || r == '’' || r == '*' || r == '+' || r == ' ' {
+				continue
+			}
+
+
+			mora := string(r)
 			if i+1 < len(runes) {
 				next := runes[i+1]
 				// ャュョ などの小書きカタカナを判定
@@ -110,7 +120,25 @@ func ConvertToNotes(morphemes []libopj.Morpheme, baseTick int32) ([]NoteReq, int
 			}
 
 			ph, exists := kanaToPhoneme[mora]
-			if !exists {
+
+			// 長音「ー」の処理: 前の母音を継承する
+			if mora == "ー" {
+				if lastVowel != "" {
+					ph = lastVowel
+				} else {
+					ph = "a" // フォールバック
+				}
+			} else if exists {
+				// 通常の音から母音を抽出 (例: "k a" -> "a")
+				parts := strings.Fields(ph)
+				if len(parts) > 0 {
+					v := parts[len(parts)-1]
+					// 母音らしいものだけを記憶 (cl や N は除外)
+					if strings.ContainsAny(v, "aiMeo") {
+						lastVowel = v
+					}
+				}
+			} else {
 				ph = "u n k"
 			}
 

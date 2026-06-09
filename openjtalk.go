@@ -84,7 +84,7 @@ func opjt_main(bus *BusHQdat, dicpath string) {
 
 			// PPSF生成への連携
 			notes, _ := ConvertToNotes(morphemes, 1920) // 1920 tick から開始
-			outputFile := "test_generated.ppsf.bin"
+			outputFile := text+".bin"
 			if len(msg.Option) > 1 {
 				outputFile = msg.Option[1]
 			}
@@ -187,9 +187,9 @@ var kanaToPhoneme = map[string]string{
 	"リョ": "4' o",
 	"ワ":  "w a",
 	"ヲ":  "w o",
-	"ン":  "N",
+	"ン":  "n",
 	"ッ":  "cl",
-	"ー":  "ー", // 長音はそのまま渡すか、前の母音を重ねるなどの処理が必要
+	"ー":  "ー",
 	"ウィ": "w i",
 	"ウェ": "w e",
 	"ウォ": "w o",
@@ -205,7 +205,7 @@ var kanaToPhoneme = map[string]string{
 	"ジ":  "dZ i",
 	"ズ":  "dz M",
 	"ゼ":  "dz e",
-	"ぞ":  "dz o",
+	"ゾ":  "dz o",
 	"ジャ": "dZ a",
 	"ジュ": "dZ M",
 	"ジェ": "dZ e",

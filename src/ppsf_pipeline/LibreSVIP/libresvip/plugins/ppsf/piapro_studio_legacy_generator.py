@@ -714,8 +714,8 @@ class PiaproStudioLegacyGenerator:
         synchronizer = TimeSynchronizer(project.song_tempo_list)
 
 
-        print(tpl)
-        
+        #print(tpl)
+
         events: list[dict] = []
         note_clip_dicts: list[dict] = []
 

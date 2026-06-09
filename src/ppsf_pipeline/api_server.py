@@ -5,12 +5,13 @@ import struct
 import time 
 import uvicorn
 from fastapi import FastAPI, Request, Response, BackgroundTasks
+
+# LibreSVIPのパスを通す (インポート前に実行が必要)
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "LibreSVIP"))
+
 from libresvip.plugins.ppsf.piapro_studio_legacy_generator import PiaproStudioLegacyGenerator
 from libresvip.plugins.ppsf.options import OutputOptions
 from libresvip.model.base import Project, SingingTrack, Note, SongTempo, TimeSignature
-
-# LibreSVIPのパスを通す
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "LibreSVIP"))
 
 app = FastAPI()
 
