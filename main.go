@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"os"
+	"time"
 )
 
 func main() {
@@ -32,6 +33,12 @@ func main() {
 	NewVstHost(bus, mw.Synchronize)
 	println("inited host")
 
+
+	go func() {
+			time.Sleep(100 * time.Millisecond)
+				mw.onLoadPlugin()
+
+	}()
 	// メインループの開始 (ウィンドウが閉じられるまでブロック)
 	mw.Run()
 	bus.sendMsg(MsgBus{	To: "txt2ppsf",	Cmd: "kill",})

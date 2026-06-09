@@ -88,7 +88,7 @@ func opjt_main(bus *BusHQdat, dicpath string) {
 			if len(msg.Option) > 1 {
 				outputFile = msg.Option[1]
 			}
-			RequestPPSFGeneration(notes, outputFile)
+			RequestPPSFGeneration(notes, outputFile,bus)
 		
 		case "kill":
 			resp, err := http.Get("http://127.0.0.1:8000/quit")

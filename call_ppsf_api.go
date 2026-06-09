@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"openjtalk-go/libopj"
 	"os"
+	"unsafe"
 )
 
 type NoteReq struct {
@@ -19,7 +20,7 @@ type NoteReq struct {
 }
 
 // RequestPPSFGeneration sends notes to the PPSF generator API and saves the resulting bin file.
-func RequestPPSFGeneration(notes []NoteReq, outputFilename string) {
+func RequestPPSFGeneration(notes []NoteReq, outputFilename string,bus *BusHQdat) {
 	req := map[string]interface{}{
 		"output": outputFilename,
 		"notes":  notes,
@@ -47,6 +48,16 @@ func RequestPPSFGeneration(notes []NoteReq, outputFilename string) {
 		fmt.Println("Write File Error:", err)
 		return
 	}
+
+	bus.sendMsg(MsgBus{
+		To: "vst_host",
+		Cmd: "load_fxb2",
+		Option: []string{
+			unsafe.String(&body[0],len(body)),
+		},
+	})
+
+
 	fmt.Printf("Success! Generated %s (%d bytes)\n", outputFilename, len(body))
 }
 
@@ -55,7 +66,7 @@ func ConvertToNotes(morphemes []libopj.Morpheme, baseTick int32) ([]NoteReq, int
 	currentTick := baseTick
 
 	// 1モーラあたりの長さ (200ms = 192 dur)
-	const moraDur int32 = 192
+	const moraDur int32 = 160
 	// 基準ピッチ (MIDIノート番号 60 = C4)
 	const basePitch int = 60
 
@@ -86,15 +97,15 @@ func ConvertToNotes(morphemes []libopj.Morpheme, baseTick int32) ([]NoteReq, int
 			pitch := basePitch
 			if m.Accent == 0 {
 				if moraIdx != 1 {
-					pitch = basePitch + 4
+					pitch = basePitch + 2
 				}
 			} else if m.Accent == 1 {
 				if moraIdx == 1 {
-					pitch = basePitch + 4
+					pitch = basePitch + 2
 				}
 			} else {
 				if moraIdx >= 2 && moraIdx <= m.Accent {
-					pitch = basePitch + 4
+					pitch = basePitch + 2
 				}
 			}
 
@@ -118,7 +129,7 @@ func ConvertToNotes(morphemes []libopj.Morpheme, baseTick int32) ([]NoteReq, int
 			notes = append(notes, NoteReq{
 				Tick:    currentTick,
 				Pitch:   0,
-				Dur:     75,
+				Dur:     30,
 				Lyric:   "、",
 				Phoneme: "pau",
 			})

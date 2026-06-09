@@ -176,6 +176,8 @@ func (h *VstHost) loop() {
 			h.syncFunc(func() { h.saveFxb(msg.Option[0]) })
 		case "load_fxb":
 			h.syncFunc(func() { h.loadFxb(msg.Option[0]) })
+		case "load_fxb2":
+			h.syncFunc(func() {h.load_fxb2(msg.Option[0])})
 		case "dump_raw":
 			h.syncFunc(func() { h.dumpRaw(msg.Option[0]) })
 		case "load_raw": // 生バイナリを直接プラグインにセット
@@ -305,6 +307,15 @@ func (h *VstHost) loadFxb(filename string) {
 	data := make([]byte, chunkSize)
 	io.ReadFull(file, data)
 	h.plugin.SetBankData(data)
+}
+
+func (h *VstHost)load_fxb2(bytsarr string){
+		if h.plugin == nil {
+		return
+	}
+	bin:=[]byte(bytsarr)
+		h.plugin.SetBankData(bin)
+
 }
 
 func (h *VstHost) audioThread() {
