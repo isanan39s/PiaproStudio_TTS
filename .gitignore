@@ -1,7 +1,7 @@
 *.exe
 *.dmp
 *.out
+*.bin
 desktop.ini
-test/dump_fxb/LibreSVIP*
 
-test/dump_fxb/venv
+test/dump_fxb/
