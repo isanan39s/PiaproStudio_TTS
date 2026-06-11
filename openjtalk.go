@@ -93,11 +93,12 @@ func opjt_main(bus *BusHQdat, dicpath string) {
 
 			// PPSF生成への連携
 			notes, _ := ConvertToNotes(morphemes, 1920) // 1920 tick から開始
-			outputFile := text + ".bin"
-			if len(msg.Option) > 1 {
-				outputFile = msg.Option[1]
-			}
+
+			// テキストと日時からユニークなファイル名を生成
+			outputFile := GeneratePPSFFilename(text)
+
 			RequestPPSFGeneration(notes, outputFile, bus)
+
 
 		case "kill":
 			resp, err := http.Get("http://127.0.0.1:8000/quit")

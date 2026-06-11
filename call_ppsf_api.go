@@ -9,8 +9,33 @@ import (
 	"openjtalk-go/libopj"
 	"os"
 	"strings"
+	//"time"
+	"unicode"
 	"unsafe"
 )
+
+// GeneratePPSFFilename: 入力の先頭20字(クリーンアップ後) + 日時秒.bin を生成します
+func GeneratePPSFFilename(text string) string {
+	// ファイル名に使えない文字や空白を除去
+	clean := strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) || strings.ContainsRune(`\/:*?"<>|`, r) {
+			return -1
+		}
+		return r
+	}, text)
+
+	runes := []rune(clean)
+	if len(runes) > 20 {
+		runes = runes[:20]
+	}
+	prefix := string(runes)
+	if prefix == "" {
+		prefix = "tts_output"
+	}
+
+	//timestamp := time.Now().Format("20060102_150405")
+	return fmt.Sprintf("%s.bin", prefix)//, timestamp)
+}
 
 type NoteReq struct {
 	Tick    int32  `json:"tick"`
@@ -66,7 +91,7 @@ func ConvertToNotes(morphemes []libopj.Morpheme, baseTick int32) ([]NoteReq, int
 	currentTick := baseTick
 
 	// 1モーラあたりの長さ (200ms = 192 dur)
-	const moraDur int32 = 160
+	const moraDur int32 = 145
 	// 基準ピッチ (MIDIノート番号 60 = C4)
 	const basePitch int = 60
 
