@@ -4,13 +4,14 @@ package main
 // 宛先を見て適切なchanにメッセージを転送する
 // 入力1本、出力複数なスイッチ
 // 最初から最後まで使うchanを登録することが推奨されます
-
 type MsgBus struct {
-	Cmd    string
-	To     string
-	From   string ///自称
-	Option []string
+	Cmd       string
+	To        string
+	From      string ///自称
+	Option    []string
+	ReplyChan chan []byte
 }
+
 
 type BusHQdat struct {
 	addrTab map[string]chan MsgBus

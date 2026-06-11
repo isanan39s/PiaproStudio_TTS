@@ -32,11 +32,11 @@ func (api *APIserver) entry(w http.ResponseWriter, r *http.Request) {
 	msg := MsgBus{
 		Cmd:    req.Cmd,
 		To:     "txt2ppsf",
+		From:   "api",
 		Option: req.Option,
 	}
 	api.bus.sendMsg(msg)
-	println(r, msg.Option[0])
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "dispatched"})
+	json.NewEncoder(w).Encode(map[string]string{"status": "dispatched", "cmd": req.Cmd})
 }

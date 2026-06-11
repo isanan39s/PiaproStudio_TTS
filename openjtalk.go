@@ -11,7 +11,7 @@ import (
 	"openjtalk-go/libopj"
 )
 
-func printAnalysis(w *tabwriter.Writer, text string, morphemes []libopj.Morpheme) {
+func printAnalysis(w *tabwriter.Writer, text string, morphemes []libopj.Morpheme, labels []string) {
 	fmt.Printf("\n【解析結果】「%s」\n", text)
 	fmt.Fprintln(w, "ID\t表層形\t品詞\t細分類1\t細分類2\t細分類3\t活用型\t活用形\t原型\t読み\t発音\tAcc\tMora\tRule\tFlag")
 	for i, m := range morphemes {
@@ -21,6 +21,18 @@ func printAnalysis(w *tabwriter.Writer, text string, morphemes []libopj.Morpheme
 			m.Accent, m.MoraSize, m.ChainRule, m.ChainFlag)
 	}
 	w.Flush()
+
+	if len(labels) > 0 {
+		fmt.Println("\n【フルコンテキストラベル解析】")
+		parsed := libopj.ParseHTSLabels(labels)
+		for i, l := range parsed {
+			peak := ""
+			if l.DistToAccent == 0 && l.Phoneme != "pau" && l.Phoneme != "sil" {
+				peak = " ★アクセント核"
+			}
+			fmt.Printf("[%d] %-4s (句内位置:%d/%d)%s\n", i, l.Phoneme, l.MoraPos, l.PhraseMoraCount, peak)
+		}
+	}
 }
 
 func opjt_main(bus *BusHQdat, dicpath string) {
@@ -75,9 +87,24 @@ func opjt_main(bus *BusHQdat, dicpath string) {
 		switch msg.Cmd {
 		case "say":
 			bus.sendMsg(MsgBus{Cmd: "stop", To: "vst_host", From: "gui"})
+			text := msg.Option[0]
+			morphemes, err := engine.Analyze(text)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "分析エラー: %v\n", err)
+				continue
+			}
+			labels := engine.GetLabels()
+			parsedLabels := libopj.ParseHTSLabels(labels)
+			notes, lastTick := ConvertToNotesCombined(morphemes, parsedLabels, 1920)
+
+			outputFile := GeneratePPSFFilename(text)
+
+			// 1. 生成を実行 (内部で load_fxb2 が vst_host へ飛ぶ)
+			RequestPPSFGeneration(notes, outputFile, lastTick, bus)
+
+			// 2. 少し待ってから再生
 			go func() {
-				bus.sendMsg(MsgBus{Cmd: "genppsf", To: "txt2ppsf", From: msg.From, Option: msg.Option})
-				time.Sleep(500 * time.Millisecond)	
+				time.Sleep(300 * time.Millisecond)
 				bus.sendMsg(MsgBus{To: "vst_host", From: "txt2ppsf", Cmd: "seek_ppq", Option: []string{"0"}})
 				bus.sendMsg(MsgBus{Cmd: "play", To: "vst_host", From: msg.From})
 			}()
@@ -89,15 +116,18 @@ func opjt_main(bus *BusHQdat, dicpath string) {
 				fmt.Fprintf(os.Stderr, "分析エラー: %v\n", err)
 				continue
 			}
-			printAnalysis(w, text, morphemes)
+			labels:=engine.GetLabels()
 
+			printAnalysis(w, text, morphemes,labels)
+
+			parseLabel:=libopj.ParseHTSLabels(labels)
 			// PPSF生成への連携
-			notes, _ := ConvertToNotes(morphemes, 1920) // 1920 tick から開始
+			notes, ticklen := ConvertToNotesCombined(morphemes,parseLabel, 1920) // 1920 tick から開始
 
 			// テキストと日時からユニークなファイル名を生成
 			outputFile := GeneratePPSFFilename(text)
 
-			RequestPPSFGeneration(notes, outputFile, bus)
+			RequestPPSFGeneration(notes, outputFile,ticklen, bus)
 
 
 		case "kill":

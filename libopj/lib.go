@@ -10,6 +10,8 @@ package libopj
 #include "njd.h"
 #include "text2mecab.h"
 #include "mecab2njd.h"
+#include "jpcommon.h"
+#include "njd2jpcommon.h"
 #include "njd_set_accent_phrase.h"
 #include "njd_set_accent_type.h"
 #include "njd_set_digit.h"
@@ -51,15 +53,17 @@ type Morpheme struct {
 
 // OpenJTalk言語解析エンジン構造体
 type OpenJTalkEngine struct {
-	mecab   C.Mecab
-	njd     C.NJD
-	dicPath *C.char
+	mecab    C.Mecab
+	njd      C.NJD
+	jpcommon C.JPCommon
+	dicPath  *C.char
 }
 
 func NewOpenJTalkEngine(dictDir string) (*OpenJTalkEngine, error) {
 	engine := &OpenJTalkEngine{}
 	C.Mecab_initialize(&engine.mecab)
 	C.NJD_initialize(&engine.njd)
+	C.JPCommon_initialize(&engine.jpcommon)
 	engine.dicPath = C.CString(dictDir)
 	ret := C.Mecab_load(&engine.mecab, engine.dicPath)
 	if ret == 0 {
@@ -70,6 +74,11 @@ func NewOpenJTalkEngine(dictDir string) (*OpenJTalkEngine, error) {
 }
 
 func (e *OpenJTalkEngine) Analyze(text string) ([]Morpheme, error) {
+	// 前回の解析結果をクリア
+	C.Mecab_refresh(&e.mecab)
+	C.NJD_refresh(&e.njd)
+	C.JPCommon_refresh(&e.jpcommon)
+
 	cText := C.CString(text)
 	defer C.free(unsafe.Pointer(cText))
 	cBuff := (*C.char)(C.malloc(8192))
@@ -87,6 +96,10 @@ func (e *OpenJTalkEngine) Analyze(text string) ([]Morpheme, error) {
 	C.njd_set_accent_type(&e.njd)
 	C.njd_set_unvoiced_vowel(&e.njd)
 	C.njd_set_long_vowel(&e.njd)
+
+	// NJDをJPCommonへ変換
+	C.njd2jpcommon(&e.jpcommon, &e.njd)
+	C.JPCommon_make_label(&e.jpcommon)
 
 	var results []Morpheme
 	currentNode := e.njd.head
@@ -109,13 +122,29 @@ func (e *OpenJTalkEngine) Analyze(text string) ([]Morpheme, error) {
 		})
 		currentNode = currentNode.next
 	}
-	C.Mecab_refresh(&e.mecab)
-	C.NJD_refresh(&e.njd)
 	return results, nil
+}
+
+// GetLabels は最新の解析結果からフルコンテキストラベル（HTS形式）を取得します
+func (e *OpenJTalkEngine) GetLabels() []string {
+	size := int(C.JPCommon_get_label_size(&e.jpcommon))
+	features := C.JPCommon_get_label_feature(&e.jpcommon)
+	if features == nil {
+		return nil
+	}
+
+	// C側のポインタ配列をGoのスライスに変換
+	slice := (*[1 << 28]*C.char)(unsafe.Pointer(features))[:size:size]
+	labels := make([]string, size)
+	for i := 0; i < size; i++ {
+		labels[i] = C.GoString(slice[i])
+	}
+	return labels
 }
 
 func (e *OpenJTalkEngine) Close() {
 	C.Mecab_clear(&e.mecab)
 	C.NJD_clear(&e.njd)
+	C.JPCommon_clear(&e.jpcommon)
 	C.free(unsafe.Pointer(e.dicPath))
 }

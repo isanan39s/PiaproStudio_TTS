@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"openjtalk-go/libopj"
 	"os"
+	"strconv"
 	"strings"
 	//"time"
 	"unicode"
@@ -46,7 +47,7 @@ type NoteReq struct {
 }
 
 // RequestPPSFGeneration sends notes to the PPSF generator API and saves the resulting bin file.
-func RequestPPSFGeneration(notes []NoteReq, outputFilename string, bus *BusHQdat) {
+func RequestPPSFGeneration(notes []NoteReq, outputFilename string, lastTick int32, bus *BusHQdat) {
 	req := map[string]interface{}{
 		"output": outputFilename,
 		"notes":  notes,
@@ -80,113 +81,145 @@ func RequestPPSFGeneration(notes []NoteReq, outputFilename string, bus *BusHQdat
 		Cmd: "load_fxb2",
 		Option: []string{
 			unsafe.String(&body[0], len(body)),
+			strconv.Itoa(int(lastTick)),
 		},
 	})
 
 	fmt.Printf("Success! Generated %s (%d bytes)\n", outputFilename, len(body))
 }
 
-func ConvertToNotes(morphemes []libopj.Morpheme, baseTick int32) ([]NoteReq, int32) {
+var htsToVocaloid = map[string]string{
+	"a": "a", "i": "i", "u": "M", "e": "e", "o": "o",
+	"A": "a", "I": "i", "U": "M", "E": "e", "O": "o",
+	"y": "j", "w": "w", "N": "n", "n": "n",
+	"S": "S", "sh": "S", "tS": "tS", "ch": "tS", "ts": "ts", "z": "dz", "j": "dZ",
+	"h": "h", "f": "p\\", "b": "b", "p": "p", "m": "m",
+	"k": "k", "g": "g", "r": "4",
+}
+
+// ConvertToNotesCombined: 形態素(歌詞用)とラベル(音素・アクセント用)を組み合わせてノートを生成します
+func ConvertToNotesCombined(morphemes []libopj.Morpheme, labels []libopj.Label, baseTick int32) ([]NoteReq, int32) {
 	var notes []NoteReq
 	currentTick := baseTick
-
-	// 1モーラあたりの長さ (200ms = 192 dur)
-	const moraDur int32 = 145
-	// 基準ピッチ (MIDIノート番号 60 = C4)
 	const basePitch int = 60
 
-	var lastVowel string // 前のモーラの母音を記憶
+	// デュレーション設定 (180 BPM前提)
+	const (
+		durNormal   int32 = 145 // 標準
+		durAccented int32 = 175 // アクセント核 (少し長め)
+		durSokuon   int32 = 120 // 促音 (少し短め)
+		durComma    int32 = 280 // 読点 (、)
+		durPeriod   int32 = 480 // 句点 (。)
+	)
 
+	// 形態素から「かな」のストリームを作成
+	var allMoras []string
 	for _, m := range morphemes {
-		pron := m.Pronunciation
-		runes := []rune(pron)
-		var moras []string
-
-		// モーラ分解 (カタカナの拗音などを考慮)
+		if m.POS == "記号" {
+			continue
+		}
+		runes := []rune(m.Pronunciation)
 		for i := 0; i < len(runes); i++ {
 			r := runes[i]
-			// アクセント記号や特殊記号（' , ’ , * , + など）は音符ではないためスキップ
-			if r == '\'' || r == '’' || r == '*' || r == '+' || r == ' ' {
+			if r == '\'' || r == '’' || r == '*' || r == '+' || r == ' ' || r == '、' || r == '。' {
 				continue
 			}
-
 			mora := string(r)
 			if i+1 < len(runes) {
 				next := runes[i+1]
-				// ャュョ などの小書きカタカナを判定
 				if next == 'ァ' || next == 'ィ' || next == 'ゥ' || next == 'ェ' || next == 'ォ' ||
 					next == 'ャ' || next == 'ュ' || next == 'ョ' || next == 'ヮ' {
 					mora += string(next)
 					i++
 				}
 			}
-			moras = append(moras, mora)
-		}
-
-		for i, mora := range moras {
-			moraIdx := i + 1
-
-			// ピッチの計算
-			pitch := basePitch
-			if m.Accent == 0 {
-				if moraIdx != 1 {
-					pitch = basePitch + 2
-				}
-			} else if m.Accent == 1 {
-				if moraIdx == 1 {
-					pitch = basePitch + 2
-				}
-			} else {
-				if moraIdx >= 2 && moraIdx <= m.Accent {
-					pitch = basePitch + 2
-				}
-			}
-
-			ph, exists := kanaToPhoneme[mora]
-
-			// 長音「ー」の処理: 前の母音を継承する
-			if mora == "ー" {
-				if lastVowel != "" {
-					ph = lastVowel
-				} else {
-					ph = "a" // フォールバック
-				}
-			} else if exists {
-				// 通常の音から母音を抽出 (例: "k a" -> "a")
-				parts := strings.Fields(ph)
-				if len(parts) > 0 {
-					v := parts[len(parts)-1]
-					// 母音らしいものだけを記憶 (cl や N は除外)
-					if strings.ContainsAny(v, "aiMeo") {
-						lastVowel = v
-					}
-				}
-			} else {
-				ph = "u n k"
-			}
-
-			notes = append(notes, NoteReq{
-				Tick:    currentTick,
-				Pitch:   pitch,
-				Dur:     moraDur,
-				Lyric:   mora,
-				Phoneme: ph,
-			})
-			currentTick += moraDur
-		}
-
-		// 読点や助詞の後に短いポーズ
-		if m.POS == "記号" || m.POS == "助詞" {
-			notes = append(notes, NoteReq{
-				Tick:    currentTick,
-				Pitch:   0,
-				Dur:     30,
-				Lyric:   "、",
-				Phoneme: "pau",
-			})
-			currentTick += 96
+			allMoras = append(allMoras, mora)
 		}
 	}
+
+	var currentPhonemes []string
+	var lastMoraPos int = -1
+	var lastLabel libopj.Label
+	moraIdx := 0
+
+	// ノートを確定させるヘルパー
+	flush := func(l libopj.Label) {
+		if len(currentPhonemes) == 0 {
+			return
+		}
+
+		lyric := ""
+		if moraIdx < len(allMoras) {
+			lyric = allMoras[moraIdx]
+			moraIdx++
+		}
+
+		// 音素の組み立てと翻訳
+		var ph string
+		duration := durNormal
+
+		if lyric == "ッ" || lyric == "っ" {
+			ph = "cl"
+			duration = durSokuon
+		} else {
+			var translated []string
+			for _, p := range currentPhonemes {
+				if v, ok := htsToVocaloid[p]; ok {
+					translated = append(translated, v)
+				} else {
+					translated = append(translated, p)
+				}
+			}
+			ph = strings.Join(translated, " ")
+
+			// アクセント核なら少し長くする
+			if l.DistToAccent == 0 {
+				duration = durAccented
+			}
+		}
+
+		// ピッチ設定
+		pitch := basePitch
+		if l.DistToAccent == 0 && ph != "cl" {
+			pitch += 2
+		}
+
+		notes = append(notes, NoteReq{
+			Tick:    currentTick,
+			Pitch:   pitch,
+			Dur:     duration,
+			Lyric:   lyric,
+			Phoneme: ph,
+		})
+		currentTick += duration
+		currentPhonemes = nil
+	}
+
+	for _, l := range labels {
+		// 無音・ポーズの処理
+		if l.Phoneme == "pau" || l.Phoneme == "sil" {
+			flush(lastLabel)
+			if l.Phoneme == "pau" {
+				if l.IsShortPause {
+					currentTick += durComma
+				} else {
+					currentTick += durPeriod
+				}
+			}
+			lastMoraPos = -1
+			continue
+		}
+
+		// モーラ番号が変わったら、前のモーラをノートとして確定
+		if l.MoraPos != lastMoraPos && lastMoraPos != -1 {
+			flush(lastLabel)
+		}
+
+		lastMoraPos = l.MoraPos
+		lastLabel = l
+		currentPhonemes = append(currentPhonemes, l.Phoneme)
+	}
+	flush(lastLabel)
 
 	return notes, currentTick
 }

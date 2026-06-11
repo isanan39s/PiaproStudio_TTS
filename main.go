@@ -35,7 +35,7 @@ func main() {
 
 	go func() {
 		time.Sleep(100 * time.Millisecond)
-		mw.onLoadPlugin()
+		//mw.onLoadPlugin()
 
 	}()
 	// メインループの開始 (ウィンドウが閉じられるまでブロック)

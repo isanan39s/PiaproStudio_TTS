@@ -62,7 +62,9 @@ def patch_binary(data, notes):
 @app.post("/generate")
 async def generate(req: Request):
     body = await req.json()
-    notes_req = body.get("notes", [])
+    notes_req = body.get("notes")
+    if notes_req is None:
+        notes_req = []
     
     # LibreSVIPモデル構築
     notes = [Note(start_pos=n['tick'], length=n['dur'], key_number=n['pitch'], 
