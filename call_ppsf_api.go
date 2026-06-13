@@ -92,7 +92,8 @@ var htsToVocaloid = map[string]string{
 	"a": "a", "i": "i", "u": "M", "e": "e", "o": "o",
 	"A": "a", "I": "i", "U": "M", "E": "e", "O": "o",
 	"y": "j", "w": "w", "N": "n", "n": "n",
-	"S": "S", "sh": "S", "tS": "tS", "ch": "tS", "ts": "ts", "z": "dz", "j": "dZ",
+	"S": "S", "sh": "S", "tS": "tS", "ch": "tS", "ts": "ts", "z": "dz",
+	"j": "dZ", // HTSの j は「じゃ」行
 	"h": "h", "f": "p\\", "b": "b", "p": "p", "m": "m",
 	"k": "k", "g": "g", "r": "4",
 }
@@ -195,6 +196,11 @@ func ConvertToNotesCombined(morphemes []libopj.Morpheme, labels []libopj.Label, 
 		currentPhonemes = nil
 	}
 
+	// 母音判定
+	isVowel := func(p string) bool {
+		return strings.ContainsAny(p, "aiueoAIUEO") || p == "N" || p == "n"
+	}
+
 	for _, l := range labels {
 		// 無音・ポーズの処理
 		if l.Phoneme == "pau" || l.Phoneme == "sil" {
@@ -210,8 +216,18 @@ func ConvertToNotesCombined(morphemes []libopj.Morpheme, labels []libopj.Label, 
 			continue
 		}
 
-		// モーラ番号が変わったら、前のモーラをノートとして確定
-		if l.MoraPos != lastMoraPos && lastMoraPos != -1 {
+		// 強制フラッシュ条件:
+		// 1. モーラ番号が変わった
+		// 2. すでに母音を保持している状態で、新しい音素が来た (同じモーラに複数の母音は入れない)
+		hasVowel := false
+		for _, p := range currentPhonemes {
+			if isVowel(p) {
+				hasVowel = true
+				break
+			}
+		}
+
+		if (l.MoraPos != lastMoraPos && lastMoraPos != -1) || (hasVowel && !isVowel(l.Phoneme)) {
 			flush(lastLabel)
 		}
 

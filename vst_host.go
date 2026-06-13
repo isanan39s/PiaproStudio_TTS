@@ -8,10 +8,11 @@ import (
 	"log"
 	"os"
 	"runtime"
+	"strconv"
 	"sync"
 	"time"
 	"unsafe"
-
+	"bytes"
 	"pipelined.dev/audio/vst2"
 	"pipelined.dev/signal"
 
@@ -47,6 +48,11 @@ type VstHost struct {
 	otoPlayer     *oto.Player
 	otoWriter     io.WriteCloser // 追加: スピーカーへの書き込み口
 
+	// リアルタイムキャプチャ用
+	isCapturing      bool
+	captureBuffer    *bytes.Buffer
+	captureEndSample float64
+	captureReply     chan []byte
 }
 
 func NewVstHost(bus *BusHQdat, sync func(func())) *VstHost {
@@ -135,6 +141,37 @@ func (h *VstHost) loop() {
 			} else {
 				h.is_speakerOut = true
 			}
+
+		case "capture":
+			// 指定されたTickまで再生しながらキャプチャし、WAVを返す
+			if msg.ReplyChan == nil {
+				continue
+			}
+			endTick := int32(1920 + 2000) // デフォルト
+			if len(msg.Option) > 0 {
+				if v, err := strconv.Atoi(msg.Option[0]); err == nil {
+					endTick = int32(v)
+				}
+			}
+
+			h.mu.Lock()
+			h.captureBuffer = new(bytes.Buffer)
+			
+			// 開始時刻(1920)と終了時刻(endTick)をサンプルに変換
+			startPos := h.ppqToSample(1920.0 / 480.0)
+			endPos := h.ppqToSample(float64(endTick) / 480.0)
+			marginSamples := h.sampleRate // 
+
+			h.captureEndSample = endPos + marginSamples
+			h.captureReply = msg.ReplyChan
+			h.isCapturing = true
+			
+			// 再生開始位置をセット
+			h.timeInfo.SamplePos = startPos
+			h.timeInfo.PpqPos = 1920.0 / 480.0
+			h.playing = true
+			h.timeInfo.Flags |= (vst2.TransportPlaying | vst2.TransportChanged)
+			h.mu.Unlock()
 
 		case "play":
 			h.startRecording()
@@ -343,23 +380,50 @@ func (h *VstHost) audioThread() {
 			}
 			h.timeInfo.NanoSeconds = float64(time.Since(h.startTime).Nanoseconds())
 			h.mu.Unlock()
+
+			// VSTプロセス実行
 			p.ProcessFloat(h.inBuffer, h.outBuffer)
 
-			// --- スピーカー出力 (再生/停止にかかわらず常に実行) ---
+			// 出力データをインターリーブ形式のスライスにまとめる
+			l, r := h.outBuffer.Channel(0), h.outBuffer.Channel(1)
+			audioBuf := make([]float32, h.bufferSize*2)
+			for i := 0; i < h.bufferSize; i++ {
+				audioBuf[i*2] = l[i]
+				audioBuf[i*2+1] = r[i]
+			}
+
+			// --- スピーカー出力 ---
 			if h.otoWriter != nil && h.is_speakerOut {
-				l, r := h.outBuffer.Channel(0), h.outBuffer.Channel(1)
-				buf := make([]float32, h.bufferSize*2)
-				for i := 0; i < h.bufferSize; i++ {
-					buf[i*2], buf[i*2+1] = l[i], r[i]
-				}
-				binary.Write(h.otoWriter, binary.LittleEndian, buf)
+				binary.Write(h.otoWriter, binary.LittleEndian, audioBuf)
 			}
 
 			h.mu.Lock()
 			if playing {
-				// --- ファイル保存 (再生中のみ) ---
+				// --- キャプチャ処理 ---
+				if h.isCapturing {
+					// スピーカーと同じデータを 16bit PCM へ変換して書き込み
+					for _, sample := range audioBuf {
+						// クリップ防止
+						if sample > 1.0 { sample = 1.0 }
+						if sample < -1.0 { sample = -1.0 }
+						// 16bit PCM 変換
+						val := int16(sample * 32767.0)
+						binary.Write(h.captureBuffer, binary.LittleEndian, val)
+					}
+
+					// 目標サンプル数に達したかチェック
+					if h.timeInfo.SamplePos >= h.captureEndSample {
+						log.Printf("[Host] Capture finished at SamplePos: %.0f", h.timeInfo.SamplePos)
+						h.isCapturing = false
+						wavData := h.finalizeCapture()
+						go func(c chan []byte, d []byte) { c <- d }(h.captureReply, wavData)
+					}
+				}
+
+				// --- ファイル保存 (output.wav用) ---
 				if h.is_fileOut {
-					h.writeToWav()
+					binary.Write(h.wavFile, binary.LittleEndian, audioBuf)
+					h.wavDataSize += uint32(len(audioBuf) * 4)
 				}
 				h.timeInfo.SamplePos += float64(h.bufferSize)
 			}
@@ -367,6 +431,30 @@ func (h *VstHost) audioThread() {
 			h.mu.Unlock()
 		}()
 	}
+}
+
+// finalizeCapture: キャプチャしたPCMデータにWAVヘッダーを付けてバイナリを生成します
+func (h *VstHost) finalizeCapture() []byte {
+	pcmData := h.captureBuffer.Bytes()
+	dataSize := uint32(len(pcmData))
+	
+	wavBuf := new(bytes.Buffer)
+	// RIFFヘッダー (16bit PCM, Stereo, 48kHz)
+	binary.Write(wavBuf, binary.LittleEndian, []byte("RIFF"))
+	binary.Write(wavBuf, binary.LittleEndian, uint32(dataSize+36))
+	binary.Write(wavBuf, binary.LittleEndian, []byte("WAVEfmt "))
+	binary.Write(wavBuf, binary.LittleEndian, uint32(16))
+	binary.Write(wavBuf, binary.LittleEndian, uint16(1)) // 1 = PCM
+	binary.Write(wavBuf, binary.LittleEndian, uint16(2)) // Stereo
+	binary.Write(wavBuf, binary.LittleEndian, uint32(h.sampleRate))
+	binary.Write(wavBuf, binary.LittleEndian, uint32(h.sampleRate*2*2)) // 2bytes * 2ch
+	binary.Write(wavBuf, binary.LittleEndian, uint16(2*2))
+	binary.Write(wavBuf, binary.LittleEndian, uint16(16)) // 16bit
+	binary.Write(wavBuf, binary.LittleEndian, []byte("data"))
+	binary.Write(wavBuf, binary.LittleEndian, dataSize)
+	wavBuf.Write(pcmData)
+
+	return wavBuf.Bytes()
 }
 
 func (h *VstHost) startRecording() {
@@ -519,13 +607,32 @@ func (h *VstHost) TranscribeTimeInfo() string {
 func (h *VstHost) PpqToSample(ppq float64) float64 {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
+	return h.ppqToSample(ppq)
+}
 
+// ppqToSample (Internal): ロックを保持している場合に使用する内部計算用
+func (h *VstHost) ppqToSample(ppq float64) float64 {
 	tempo := h.timeInfo.Tempo
 	if tempo <= 0 {
-		tempo = 120.0
+		tempo = 180.0
 	}
-
-	// PPQ * (60s / tempo) = 秒数
-	// 秒数 * sampleRate = サンプル数
 	return ppq * (60.0 / tempo) * h.sampleRate
+}
+
+// GetTempo: 現在のプラグインのテンポを返します
+func (h *VstHost) GetTempo() float64 {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if h.timeInfo.Tempo <= 0 {
+		return 180.0
+	}
+	return h.timeInfo.Tempo
+}
+
+// TickToSeconds: MIDI tick を秒数に変換します
+func (h *VstHost) TickToSeconds(tick int32) float64 {
+	tempo := h.GetTempo()
+	// (tick / 480) = PPQ
+	// PPQ * (60 / tempo) = 秒数
+	return (float64(tick) / 480.0) * (60.0 / tempo)
 }

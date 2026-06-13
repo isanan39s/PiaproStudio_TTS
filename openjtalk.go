@@ -85,29 +85,40 @@ func opjt_main(bus *BusHQdat, dicpath string) {
 	for msg := range toBus {
 
 		switch msg.Cmd {
+		case "getwav":
+			text := msg.Option[0]
+			morphemes, _ := engine.Analyze(text)
+			labels := engine.GetLabels()
+			notes, lastTick := ConvertToNotesCombined(morphemes, libopj.ParseHTSLabels(labels), 1920)
+			outputFile := GeneratePPSFFilename(text)
+			RequestPPSFGeneration(notes, outputFile, lastTick, bus)
+
+			go func() {
+				// ロードと初期化待ちを少し長めにする
+				time.Sleep(1000 * time.Millisecond)
+				bus.sendMsg(MsgBus{
+					To:        "vst_host",
+					Cmd:       "capture",
+					Option:    []string{fmt.Sprintf("%d", lastTick)},
+					ReplyChan: msg.ReplyChan, // APIへWAVを返す
+				})
+			}()
+
 		case "say":
 			bus.sendMsg(MsgBus{Cmd: "stop", To: "vst_host", From: "gui"})
 			text := msg.Option[0]
-			morphemes, err := engine.Analyze(text)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "分析エラー: %v\n", err)
-				continue
-			}
+			morphemes, _ := engine.Analyze(text)
 			labels := engine.GetLabels()
-			parsedLabels := libopj.ParseHTSLabels(labels)
-			notes, lastTick := ConvertToNotesCombined(morphemes, parsedLabels, 1920)
-
+			notes, lastTick := ConvertToNotesCombined(morphemes, libopj.ParseHTSLabels(labels), 1920)
 			outputFile := GeneratePPSFFilename(text)
-
-			// 1. 生成を実行 (内部で load_fxb2 が vst_host へ飛ぶ)
 			RequestPPSFGeneration(notes, outputFile, lastTick, bus)
 
-			// 2. 少し待ってから再生
 			go func() {
 				time.Sleep(300 * time.Millisecond)
-				bus.sendMsg(MsgBus{To: "vst_host", From: "txt2ppsf", Cmd: "seek_ppq", Option: []string{"0"}})
-				bus.sendMsg(MsgBus{Cmd: "play", To: "vst_host", From: msg.From})
+				bus.sendMsg(MsgBus{To: "vst_host", Cmd: "seek_ppq", Option: []string{"0"}})
+				bus.sendMsg(MsgBus{Cmd: "play", To: "vst_host"})
 			}()
+
 
 		case "genppsf":
 			text := msg.Option[0]
