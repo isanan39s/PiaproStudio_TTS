@@ -82,12 +82,12 @@ PiaproStudio_TTS/
 
 | コンポーネント | ライセンス名 | 著作権表示 / 配布時の注意 |
 | :--- | :--- | :--- |
-| **PiaproStudio_TTS** | MIT License | Copyright (c) 2025 isanan. 本プログラム本体のソースコードに適用されます。 |
+| **PiaproStudio_TTS** | MIT License | Copyright (c) 2025-2026 isanan39s. 本プログラム本体のソースコードに適用されます。 |
 | **Open JTalk** | Modified BSD License | 漢字からかな変換およびイントネーション情報の解析に使用しています。 |
 | **LibreSVIP** | MIT License | `.ppsf` バイナリ生成のコアエンジンとして同梱されています。 |
 | **Go Walk (GUI)** | BSD 3-Clause License | WindowsネイティブGUIの描画に使用しています。 |
 | **Python Embedded Runtime** | PSF License | 埋め込み用 Python 実行環境のライセンスです。 |
-| **初音ミク V4X / Piapro Studio** | **著作権法および利用規約** | **Crypton Future Media, Inc.**<br>プログラム本体やボイスバンクを同梱して再配布することは固く禁じられています。ユーザー自身が購入しアクティベーションを済ませている必要があります。 |
+| **任意のボイスバンク / Piapro Studio** | **著作権法および利用規約等** | **Crypton Future Media, Inc. もしくはその他**<br>プログラム本体やボイスバンクを同梱して再配布することは固く禁じられています。ユーザー自身が購入しアクティベーションを済ませている必要があります。 |
 
 ---
 
