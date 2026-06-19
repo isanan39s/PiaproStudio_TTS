@@ -297,13 +297,7 @@ func NewGUI(bus *BusHQdat) *MyMainWindow {
 							mw.Close()
 						},
 					},
-					Action{
-						Text: "genppsf",
-						OnTriggered: func() {
-							mw.bus.sendMsg(MsgBus{Cmd: "genppsf", To: "txt2ppsf", From: "gui", Option: []string{"こんにちは"}})
 
-						},
-					},
 				},
 			},
 
