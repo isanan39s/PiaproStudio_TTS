@@ -12,22 +12,6 @@ import (
 	. "github.com/lxn/walk/declarative"
 )
 
-type MyMainWindow struct {
-	*walk.MainWindow
-	vstContainer  *walk.CustomWidget
-	bus           *BusHQdat
-	plugptahLabel *walk.Label
-	statusLabel   *walk.Label // 追加: 再生位置などの表示用
-	ppqLineEdit   *walk.LineEdit
-	is_fOut       *walk.CheckBox
-	is_sOut       *walk.CheckBox
-	toBus         chan MsgBus
-	closing       chan struct{}
-	dumpCount     int
-	pulgpath      string
-	ttsinput      *walk.LineEdit
-}
-
 func getNextDumpCount() int {
 	max := 0
 	files, _ := os.ReadDir(".")
@@ -134,14 +118,15 @@ func NewGUI(bus *BusHQdat) *MyMainWindow {
 						Text:     "ファイルに書き出し",
 						Checked:  true,
 						OnCheckedChanged: func() {
+							state := "off"
+							if mw.is_fOut.Checked() {
+								state = "on"
+							}
 							mw.bus.sendMsg(MsgBus{
-								Cmd:  "set_output_conf",
-								To:   "vst_host",
-								From: "gui",
-								Option: []string{
-									fmt.Sprintf("%t", mw.is_fOut.Checked()),
-									fmt.Sprintf("%t", mw.is_sOut.Checked()),
-								},
+								Cmd:    "set_output",
+								To:     "vst_host",
+								From:   "gui",
+								Option: []string{"wav", state, "output.wav"},
 							})
 						},
 					},
@@ -150,14 +135,15 @@ func NewGUI(bus *BusHQdat) *MyMainWindow {
 						Text:     "スピーカに出力",
 						Checked:  true,
 						OnCheckedChanged: func() {
+							state := "off"
+							if mw.is_sOut.Checked() {
+								state = "on"
+							}
 							mw.bus.sendMsg(MsgBus{
-								Cmd:  "set_output_conf",
-								To:   "vst_host",
-								From: "gui",
-								Option: []string{
-									fmt.Sprintf("%t", mw.is_fOut.Checked()),
-									fmt.Sprintf("%t", mw.is_sOut.Checked()),
-								},
+								Cmd:    "set_output",
+								To:     "vst_host",
+								From:   "gui",
+								Option: []string{"speaker", state},
 							})
 						},
 					},
@@ -297,7 +283,6 @@ func NewGUI(bus *BusHQdat) *MyMainWindow {
 							mw.Close()
 						},
 					},
-
 				},
 			},
 

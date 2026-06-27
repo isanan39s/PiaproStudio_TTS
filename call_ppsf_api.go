@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"openjtalk-go/libopj"
 	"os"
 	"strconv"
 	"strings"
-	//"time"
 	"unicode"
 	"unsafe"
+
+	"openjtalk-go/libopj"
 )
 
 // GeneratePPSFFilename: 入力の先頭20字(クリーンアップ後) + 日時秒.bin を生成します
@@ -35,15 +35,7 @@ func GeneratePPSFFilename(text string) string {
 	}
 
 	//timestamp := time.Now().Format("20060102_150405")
-	return fmt.Sprintf("%s.bin", prefix)//, timestamp)
-}
-
-type NoteReq struct {
-	Tick    int32  `json:"tick"`
-	Pitch   int    `json:"pitch"`
-	Dur     int32  `json:"dur"`
-	Lyric   string `json:"lyric"`
-	Phoneme string `json:"phoneme"`
+	return fmt.Sprintf("%s.bin", prefix) //, timestamp)
 }
 
 // RequestPPSFGeneration sends notes to the PPSF generator API and saves the resulting bin file.

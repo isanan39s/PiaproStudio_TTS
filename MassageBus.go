@@ -12,7 +12,6 @@ type MsgBus struct {
 	ReplyChan chan []byte
 }
 
-
 type BusHQdat struct {
 	addrTab map[string]chan MsgBus
 }

@@ -7,11 +7,6 @@ import (
 	"time"
 )
 
-type APIserver struct {
-	bus   *BusHQdat
-	toBus chan MsgBus
-}
-
 func (api *APIserver) entry(w http.ResponseWriter, r *http.Request) {
 	var cmd string
 	var options []string
@@ -92,4 +87,3 @@ func (api *APIserver) entry(w http.ResponseWriter, r *http.Request) {
 		"cmd":    cmd,
 	})
 }
-

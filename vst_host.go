@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -9,51 +10,57 @@ import (
 	"os"
 	"runtime"
 	"strconv"
-	"sync"
 	"time"
 	"unsafe"
-	"bytes"
-	"pipelined.dev/audio/vst2"
-	"pipelined.dev/signal"
 
 	"github.com/ebitengine/oto/v3"
+	"pipelined.dev/audio/vst2"
+	"pipelined.dev/signal"
 )
 
-const (
-	OpaqueChunkID = 0x436e634b
-	FxMagic       = 0x4678426b
-	FxVersion     = 1
-)
-
-type VstHost struct {
-	bus           *BusHQdat
-	toBus         chan MsgBus
-	plugin        *vst2.Plugin
-	vst           *vst2.VST
-	active        bool
-	playing       bool
-	syncFunc      func(func())
-	mu            sync.RWMutex
-	sampleRate    float64
-	bufferSize    int
-	timeInfo      vst2.TimeInfo
-	startTime     time.Time
-	inBuffer      vst2.FloatBuffer
-	outBuffer     vst2.FloatBuffer
-	is_fileOut    bool
-	wavFile       *os.File
-	wavDataSize   uint32
-	is_speakerOut bool
-	otoContext    *oto.Context
-	otoPlayer     *oto.Player
-	otoWriter     io.WriteCloser // 追加: スピーカーへの書き込み口
-
-	// リアルタイムキャプチャ用
-	isCapturing      bool
-	captureBuffer    *bytes.Buffer
-	captureEndSample float64
-	captureReply     chan []byte
+// SetSpeakerEnabled toggles speaker output
+func (h *VstHost) SetSpeakerEnabled(on bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.is_speakerOut = on
 }
+
+// SetWavEnabled toggles wav file output and manages file creation/closure
+func (h *VstHost) SetWavEnabled(on bool, path string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	// No state change needed
+	if h.is_fileOut == on && (!on || (h.wavFile != nil && path == h.wavFile.Name())) {
+		return nil
+	}
+
+	// Close existing file if any
+	if h.wavFile != nil {
+		h.writeWavHeader(h.wavDataSize)
+		h.wavFile.Close()
+		h.wavFile = nil
+		h.wavDataSize = 0
+	}
+
+	h.is_fileOut = on
+	if on {
+		if path == "" {
+			return fmt.Errorf("wav output requires file path")
+		}
+		f, err := os.Create(path)
+		if err != nil {
+			h.is_fileOut = false
+			return err
+		}
+		h.wavFile = f
+		h.wavDataSize = 0
+		h.writeWavHeader(0)
+	}
+	return nil
+}
+
+var activeVstHost *VstHost
 
 func NewVstHost(bus *BusHQdat, sync func(func())) *VstHost {
 	toBus := make(chan MsgBus, 100)
@@ -69,6 +76,7 @@ func NewVstHost(bus *BusHQdat, sync func(func())) *VstHost {
 		is_fileOut:    true,
 		is_speakerOut: true,
 	}
+	activeVstHost = host
 
 	// oto の初期化 (32bit Float, Stereo, Hostのサンプルレートと同期)
 	op := &oto.NewContextOptions{
@@ -127,19 +135,28 @@ func (h *VstHost) loop() {
 				h.syncFunc(func() { h.loadPlugin(msg.Option[0], msg.Option[1]) })
 			}
 
-		case "set_output_conf":
-			tmp := msg.Option[0]
-			if tmp == "false" {
-				h.is_fileOut = false
-			} else {
-				h.is_fileOut = true
+		case "set_output":
+			// Option[0] = "speaker" | "wav"
+			// Option[1] = "on" | "off"
+			// Option[2] (wav only) = output file path
+			if len(msg.Option) < 2 {
+				log.Printf("[Host] set_output: insufficient options")
+				break
 			}
-
-			tmp = msg.Option[1]
-			if tmp == "false" {
-				h.is_speakerOut = false
-			} else {
-				h.is_speakerOut = true
+			target, state := msg.Option[0], msg.Option[1]
+			switch target {
+			case "speaker":
+				h.SetSpeakerEnabled(state == "on")
+			case "wav":
+				path := ""
+				if state == "on" && len(msg.Option) > 2 {
+					path = msg.Option[2]
+				}
+				if err := h.SetWavEnabled(state == "on", path); err != nil {
+					log.Printf("[Host] set_output wav error: %v", err)
+				}
+			default:
+				log.Printf("[Host] set_output: unknown target %s", target)
 			}
 
 		case "capture":
@@ -156,16 +173,16 @@ func (h *VstHost) loop() {
 
 			h.mu.Lock()
 			h.captureBuffer = new(bytes.Buffer)
-			
+
 			// 開始時刻(1920)と終了時刻(endTick)をサンプルに変換
 			startPos := h.ppqToSample(1920.0 / 480.0)
 			endPos := h.ppqToSample(float64(endTick) / 480.0)
-			marginSamples := h.sampleRate // 
+			marginSamples := h.sampleRate //
 
 			h.captureEndSample = endPos + marginSamples
 			h.captureReply = msg.ReplyChan
 			h.isCapturing = true
-			
+
 			// 再生開始位置をセット
 			h.timeInfo.SamplePos = startPos
 			h.timeInfo.PpqPos = 1920.0 / 480.0
@@ -404,8 +421,12 @@ func (h *VstHost) audioThread() {
 					// スピーカーと同じデータを 16bit PCM へ変換して書き込み
 					for _, sample := range audioBuf {
 						// クリップ防止
-						if sample > 1.0 { sample = 1.0 }
-						if sample < -1.0 { sample = -1.0 }
+						if sample > 1.0 {
+							sample = 1.0
+						}
+						if sample < -1.0 {
+							sample = -1.0
+						}
 						// 16bit PCM 変換
 						val := int16(sample * 32767.0)
 						binary.Write(h.captureBuffer, binary.LittleEndian, val)
@@ -437,7 +458,7 @@ func (h *VstHost) audioThread() {
 func (h *VstHost) finalizeCapture() []byte {
 	pcmData := h.captureBuffer.Bytes()
 	dataSize := uint32(len(pcmData))
-	
+
 	wavBuf := new(bytes.Buffer)
 	// RIFFヘッダー (16bit PCM, Stereo, 48kHz)
 	binary.Write(wavBuf, binary.LittleEndian, []byte("RIFF"))
@@ -458,9 +479,11 @@ func (h *VstHost) finalizeCapture() []byte {
 }
 
 func (h *VstHost) startRecording() {
-	h.wavFile, _ = os.Create("output.wav")
-	h.wavDataSize = 0
-	h.writeWavHeader(0)
+	if h.is_fileOut {
+		h.wavFile, _ = os.Create("output.wav")
+		h.wavDataSize = 0
+		h.writeWavHeader(0)
+	}
 }
 func (h *VstHost) writeToWav() {
 	l, r := h.outBuffer.Channel(0), h.outBuffer.Channel(1)
@@ -635,4 +658,13 @@ func (h *VstHost) TickToSeconds(tick int32) float64 {
 	// (tick / 480) = PPQ
 	// PPQ * (60 / tempo) = 秒数
 	return (float64(tick) / 480.0) * (60.0 / tempo)
+}
+
+// TickToDuration: MIDI tick を time.Duration に変換します（現在のテンポを参照、未ロード時は180 BPMフォールバック）
+func TickToDuration(tick int32) time.Duration {
+	if activeVstHost == nil {
+		// フォールバック: 180 BPM / 480 TPQN (1 tick = 0.6944 ms)
+		return time.Duration(float64(tick)/1.44) * time.Millisecond
+	}
+	return time.Duration(activeVstHost.TickToSeconds(tick) * float64(time.Second))
 }

@@ -117,29 +117,44 @@ func opjt_main(bus *BusHQdat, dicpath string) {
 				time.Sleep(300 * time.Millisecond)
 				bus.sendMsg(MsgBus{To: "vst_host", Cmd: "seek_ppq", Option: []string{"0"}})
 				bus.sendMsg(MsgBus{Cmd: "play", To: "vst_host"})
+
+				// 音符の長さに合わせて自動停止 (180 BPM, 480 TPQN -> 1 tick = 0.6944 ms)
+				playDur := time.Duration(float64(lastTick)*0.6944) * time.Millisecond
+				time.Sleep(playDur + 500*time.Millisecond) // 余韻500ms
+				bus.sendMsg(MsgBus{Cmd: "stop", To: "vst_host", From: "txt2ppsf"})
 			}()
 
-
 		case "genppsf":
+			bus.sendMsg(MsgBus{Cmd: "stop", To: "vst_host", From: "gui"})
 			text := msg.Option[0]
 			morphemes, err := engine.Analyze(text)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "分析エラー: %v\n", err)
 				continue
 			}
-			labels:=engine.GetLabels()
+			labels := engine.GetLabels()
 
-			printAnalysis(w, text, morphemes,labels)
+			printAnalysis(w, text, morphemes, labels)
 
-			parseLabel:=libopj.ParseHTSLabels(labels)
+			parseLabel := libopj.ParseHTSLabels(labels)
 			// PPSF生成への連携
-			notes, ticklen := ConvertToNotesCombined(morphemes,parseLabel, 1920) // 1920 tick から開始
+			notes, ticklen := ConvertToNotesCombined(morphemes, parseLabel, 1920) // 1920 tick から開始
 
 			// テキストと日時からユニークなファイル名を生成
 			outputFile := GeneratePPSFFilename(text)
 
-			RequestPPSFGeneration(notes, outputFile,ticklen, bus)
+			RequestPPSFGeneration(notes, outputFile, ticklen, bus)
+			bus.sendMsg(MsgBus{To: "vst_host", Cmd: "seek_ppq", Option: []string{"0"}})
 
+			go func() {
+				time.Sleep(300 * time.Millisecond)
+				bus.sendMsg(MsgBus{Cmd: "play", To: "vst_host",Option:[]string{fmt.Sprintf("%d", ticklen)} })
+
+				// 音符の長さに合わせて自動停止 (180 BPM, 480 TPQN -> 1 tick = 0.6944 ms)
+				playDur := time.Duration(float64(ticklen)*0.6944) * time.Millisecond
+				time.Sleep(playDur + 500*time.Millisecond) // 余韻500ms
+				bus.sendMsg(MsgBus{Cmd: "stop", To: "vst_host", From: "txt2ppsf"})
+			}()
 
 		case "kill":
 			resp, err := http.Get("http://127.0.0.1:8000/quit")
