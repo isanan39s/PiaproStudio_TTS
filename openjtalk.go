@@ -1,15 +1,20 @@
 package main
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
 	"text/tabwriter"
 	"time"
+	"unsafe"
 
 	"openjtalk-go/libopj"
 )
+
+var currentlen int32
 
 func printAnalysis(w *tabwriter.Writer, text string, morphemes []libopj.Morpheme, labels []string) {
 	fmt.Printf("\n【解析結果】「%s」\n", text)
@@ -86,32 +91,41 @@ func opjt_main(bus *BusHQdat, dicpath string) {
 
 		switch msg.Cmd {
 		case "getwav":
-			text := msg.Option[0]
-			morphemes, _ := engine.Analyze(text)
-			labels := engine.GetLabels()
-			notes, lastTick := ConvertToNotesCombined(morphemes, libopj.ParseHTSLabels(labels), 1920)
-			outputFile := GeneratePPSFFilename(text)
-			RequestPPSFGeneration(notes, outputFile, lastTick, bus)
+			// text := msg.Option[0]
+			// morphemes, _ := engine.Analyze(text)
+			// labels := engine.GetLabels()
+			// notes, lastTick := ConvertToNotesCombined(morphemes, libopj.ParseHTSLabels(labels), 1920)
+			// outputFile := GeneratePPSFFilename(text)
+			// RequestPPSFGeneration(notes, outputFile, lastTick, bus)
 
 			go func() {
 				// ロードと初期化待ちを少し長めにする
-				time.Sleep(1000 * time.Millisecond)
+				time.Sleep(300 * time.Millisecond)
+				rawReply := make(chan []byte, 1)
 				bus.sendMsg(MsgBus{
 					To:        "vst_host",
 					Cmd:       "capture",
-					Option:    []string{fmt.Sprintf("%d", lastTick)},
-					ReplyChan: msg.ReplyChan, // APIへWAVを返す
+					Option:    []string{fmt.Sprintf("%d", currentlen)},
+					ReplyChan: rawReply,
 				})
+
+				rawBytes := <-rawReply
+				var floatBuf []float32
+				if len(rawBytes) > 0 {
+					floatBuf = unsafe.Slice((*float32)(unsafe.Pointer(&rawBytes[0])), len(rawBytes)/4)
+				}
+				wavBytes := encodeFloat32ToWav(floatBuf, 48000)
+				msg.ReplyChan <- wavBytes
 			}()
 
-		case "say":
-			bus.sendMsg(MsgBus{Cmd: "stop", To: "vst_host", From: "gui"})
-			text := msg.Option[0]
-			morphemes, _ := engine.Analyze(text)
-			labels := engine.GetLabels()
-			notes, lastTick := ConvertToNotesCombined(morphemes, libopj.ParseHTSLabels(labels), 1920)
-			outputFile := GeneratePPSFFilename(text)
-			RequestPPSFGeneration(notes, outputFile, lastTick, bus)
+		case "say": /// 自動停止付きvst_host.play
+			// bus.sendMsg(MsgBus{Cmd: "stop", To: "vst_host", From: "gui"})
+			// text := msg.Option[0]
+			// morphemes, _ := engine.Analyze(text)
+			// labels := engine.GetLabels()
+			// notes, lastTick := ConvertToNotesCombined(morphemes, libopj.ParseHTSLabels(labels), 1920)
+			// outputFile := GeneratePPSFFilename(text)
+			// RequestPPSFGeneration(notes, outputFile, lastTick, bus)
 
 			go func() {
 				time.Sleep(300 * time.Millisecond)
@@ -119,7 +133,7 @@ func opjt_main(bus *BusHQdat, dicpath string) {
 				bus.sendMsg(MsgBus{Cmd: "play", To: "vst_host"})
 
 				// 音符の長さに合わせて自動停止 (180 BPM, 480 TPQN -> 1 tick = 0.6944 ms)
-				playDur := time.Duration(float64(lastTick)*0.6944) * time.Millisecond
+				playDur := time.Duration(float64(currentlen)*0.6944) * time.Millisecond
 				time.Sleep(playDur + 500*time.Millisecond) // 余韻500ms
 				bus.sendMsg(MsgBus{Cmd: "stop", To: "vst_host", From: "txt2ppsf"})
 			}()
@@ -139,22 +153,24 @@ func opjt_main(bus *BusHQdat, dicpath string) {
 			parseLabel := libopj.ParseHTSLabels(labels)
 			// PPSF生成への連携
 			notes, ticklen := ConvertToNotesCombined(morphemes, parseLabel, 1920) // 1920 tick から開始
+			currentlen = ticklen
+			println(currentlen)
 
 			// テキストと日時からユニークなファイル名を生成
-			outputFile := GeneratePPSFFilename(text)
+			outputFile := GenerateFilename(text) + ".bin"
 
 			RequestPPSFGeneration(notes, outputFile, ticklen, bus)
-			bus.sendMsg(MsgBus{To: "vst_host", Cmd: "seek_ppq", Option: []string{"0"}})
+			// bus.sendMsg(MsgBus{To: "vst_host", Cmd: "seek_ppq", Option: []string{"0"}})
 
-			go func() {
-				time.Sleep(300 * time.Millisecond)
-				bus.sendMsg(MsgBus{Cmd: "play", To: "vst_host",Option:[]string{fmt.Sprintf("%d", ticklen)} })
+			// go func() {
+			// 	time.Sleep(300 * time.Millisecond)
+			// 	bus.sendMsg(MsgBus{Cmd: "play", To: "vst_host",Option:[]string{fmt.Sprintf("%d", ticklen)} })
 
-				// 音符の長さに合わせて自動停止 (180 BPM, 480 TPQN -> 1 tick = 0.6944 ms)
-				playDur := time.Duration(float64(ticklen)*0.6944) * time.Millisecond
-				time.Sleep(playDur + 500*time.Millisecond) // 余韻500ms
-				bus.sendMsg(MsgBus{Cmd: "stop", To: "vst_host", From: "txt2ppsf"})
-			}()
+			// 	// 音符の長さに合わせて自動停止 (180 BPM, 480 TPQN -> 1 tick = 0.6944 ms)
+			// 	playDur := time.Duration(float64(ticklen)*0.6944) * time.Millisecond
+			// 	time.Sleep(playDur + 500*time.Millisecond) // 余韻500ms
+			// 	bus.sendMsg(MsgBus{Cmd: "stop", To: "vst_host", From: "txt2ppsf"})
+			// }()
 
 		case "kill":
 			resp, err := http.Get("http://127.0.0.1:8000/quit")
@@ -311,4 +327,37 @@ var kanaToPhoneme = map[string]string{
 	"ヴャ": "v j a",
 	"ヴュ": "v j M",
 	"ヴョ": "v j o",
+}
+
+func encodeFloat32ToWav(audioBuf []float32, sampleRate int) []byte {
+	pcmData := make([]byte, len(audioBuf)*2)
+	for i, sample := range audioBuf {
+		if sample > 1.0 {
+			sample = 1.0
+		} else if sample < -1.0 {
+			sample = -1.0
+		}
+		val := int16(sample * 32767.0)
+		binary.LittleEndian.PutUint16(pcmData[i*2:], uint16(val))
+	}
+
+	dataSize := uint32(len(pcmData))
+	wavBuf := new(bytes.Buffer)
+	wavBuf.Grow(44 + len(pcmData))
+
+	wavBuf.Write([]byte("RIFF"))
+	binary.Write(wavBuf, binary.LittleEndian, uint32(dataSize+36))
+	wavBuf.Write([]byte("WAVEfmt "))
+	binary.Write(wavBuf, binary.LittleEndian, uint32(16))
+	binary.Write(wavBuf, binary.LittleEndian, uint16(1)) // PCM
+	binary.Write(wavBuf, binary.LittleEndian, uint16(2)) // Stereo
+	binary.Write(wavBuf, binary.LittleEndian, uint32(sampleRate))
+	binary.Write(wavBuf, binary.LittleEndian, uint32(sampleRate*2*2))
+	binary.Write(wavBuf, binary.LittleEndian, uint16(2*2))
+	binary.Write(wavBuf, binary.LittleEndian, uint16(16))
+	wavBuf.Write([]byte("data"))
+	binary.Write(wavBuf, binary.LittleEndian, dataSize)
+	wavBuf.Write(pcmData)
+
+	return wavBuf.Bytes()
 }

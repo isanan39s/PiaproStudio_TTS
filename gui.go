@@ -1,11 +1,14 @@
 package main
 
 import (
+	// "encoding/binary"
 	"fmt"
 	"log"
 	"os"
 	"regexp"
 	"strconv"
+	// "strings"
+	"path/filepath"
 	"time"
 
 	"github.com/lxn/walk"
@@ -29,12 +32,15 @@ func getNextDumpCount() int {
 }
 
 func NewGUI(bus *BusHQdat) *MyMainWindow {
+	currentPath, _ := os.Executable()
+
 	mw := new(MyMainWindow)
 	mw.bus = bus
 	mw.toBus = make(chan MsgBus, 100)
 	mw.closing = make(chan struct{})
 	mw.dumpCount = getNextDumpCount()
 	mw.pulgpath = "C:\\Program Files\\Vstplugins\\Piapro Studio VSTi.dll"
+	mw.wavOutPath = filepath.Dir(currentPath)
 	bus.registAddr("gui", mw.toBus)
 
 	if err := (MainWindow{
@@ -210,10 +216,39 @@ func NewGUI(bus *BusHQdat) *MyMainWindow {
 							PushButton{
 								Text: "生成",
 								OnClicked: func() {
+									input:=mw.ttsinput.Text()
 									mw.bus.sendMsg(MsgBus{
 										Cmd:    "genppsf",
 										To:     "txt2ppsf",
-										Option: []string{mw.ttsinput.Text()}})
+										From:   "gui",
+										Option: []string{input},
+									})
+									go func() {
+										reply := make(chan []byte, 1)
+										mw.bus.sendMsg(MsgBus{
+											Cmd:       "getwav",
+											To:        "txt2ppsf",
+											From:      "gui",
+											ReplyChan: reply,
+										})
+										wavData := <-reply
+										if mw.is_fOut.Checked() && len(wavData) > 0 {
+											fname := filepath.Join(mw.wavOutPath, fmt.Sprintf("%s", GenerateFilename(mw.ttsinput.Text())))
+
+											if err := os.WriteFile(fname+".wav", wavData, 0644); err != nil {
+												log.Printf("[GUI] WAV 書き出し失敗: %v", err)
+											} else {
+												log.Printf("[GUI] WAV 書き出し完了: %s", fname)
+											}
+
+											/// aviutl/かんしくん用txt書き出し todo:on offつける
+											if err := os.WriteFile(fname+".txt", []byte(input), 0644); err != nil {
+												log.Printf("[GUI] txt 書き出し失敗: %v", err)
+											} else {
+												log.Printf("[GUI] txt 書き出し完了: %s", fname)
+											}
+										}
+									}()
 								},
 							},
 						},
@@ -281,6 +316,22 @@ func NewGUI(bus *BusHQdat) *MyMainWindow {
 						OnTriggered: func() {
 							mw.bus.sendMsg(MsgBus{Cmd: "close", To: "vst_host", From: "gui"})
 							mw.Close()
+						},
+					},
+					Action{
+						Text: "wavファイルの保存先",
+						OnTriggered: func() {
+							dlg := new(walk.FileDialog)
+							dlg.Title = "保存先フォルダを選択してください"
+
+							// 2. フォルダ選択ダイアログを表示
+							// (第一引数に親ウィンドウを指定)
+							if ok, _ := dlg.ShowBrowseFolder(mw.MainWindow); ok {
+								// 3. 選択されたパスを取得
+								mw.wavOutPath = dlg.FilePath
+
+								// 結果をメッセージボックスで表示
+							}
 						},
 					},
 				},

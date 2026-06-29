@@ -31,6 +31,7 @@ type MyMainWindow struct {
 	closing       chan struct{}
 	dumpCount     int
 	pulgpath      string
+	wavOutPath    string
 	ttsinput      *walk.LineEdit
 }
 
@@ -55,7 +56,13 @@ type VstHost struct {
 	is_speakerOut bool
 	otoContext    *oto.Context
 	otoPlayer     *oto.Player
-	otoWriter     io.WriteCloser // 追加: スピーカーへの書き込み口
+	otoWriter     io.WriteCloser // スピーカーへの書き込み口
+
+	// アロケーション削減用のバッファ
+	interleavedBuf []float32
+
+	// 外部録音（WAV保存用）の生 float32 ストリームチャネル
+	audioChan chan []float32
 
 	// リアルタイムキャプチャ用
 	isCapturing      bool

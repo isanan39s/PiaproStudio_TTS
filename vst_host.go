@@ -164,28 +164,29 @@ func (h *VstHost) loop() {
 			if msg.ReplyChan == nil {
 				continue
 			}
-			endTick := int32(1920 + 2000) // デフォルト
+			endTick := int32(2880) // デフォルトは4小節分 (480 ticks per quarter)
 			if len(msg.Option) > 0 {
 				if v, err := strconv.Atoi(msg.Option[0]); err == nil {
-					endTick = int32(v)
+					endTick += int32(v)
 				}
 			}
 
+			println("END_TICK:", endTick)
 			h.mu.Lock()
 			h.captureBuffer = new(bytes.Buffer)
 
 			// 開始時刻(1920)と終了時刻(endTick)をサンプルに変換
-			startPos := h.ppqToSample(1920.0 / 480.0)
+			startPos := h.ppqToSample(0)
 			endPos := h.ppqToSample(float64(endTick) / 480.0)
-			marginSamples := h.sampleRate //
-
+			// 余裕サンプルを追加し、指定 Tick まで確実にキャプチャ
+			marginSamples := h.sampleRate // 1 秒分の余裕
 			h.captureEndSample = endPos + marginSamples
 			h.captureReply = msg.ReplyChan
 			h.isCapturing = true
 
 			// 再生開始位置をセット
 			h.timeInfo.SamplePos = startPos
-			h.timeInfo.PpqPos = 1920.0 / 480.0
+			h.timeInfo.PpqPos = 0 //1920.0 / 480.0
 			h.playing = true
 			h.timeInfo.Flags |= (vst2.TransportPlaying | vst2.TransportChanged)
 			h.mu.Unlock()
@@ -405,8 +406,8 @@ func (h *VstHost) audioThread() {
 			l, r := h.outBuffer.Channel(0), h.outBuffer.Channel(1)
 			audioBuf := make([]float32, h.bufferSize*2)
 			for i := 0; i < h.bufferSize; i++ {
-				audioBuf[i*2] = l[i]
-				audioBuf[i*2+1] = r[i]
+				audioBuf[i*2] = l[i] * 5
+				audioBuf[i*2+1] = r[i] * 5
 			}
 
 			// --- スピーカー出力 ---
@@ -418,33 +419,24 @@ func (h *VstHost) audioThread() {
 			if playing {
 				// --- キャプチャ処理 ---
 				if h.isCapturing {
-					// スピーカーと同じデータを 16bit PCM へ変換して書き込み
-					for _, sample := range audioBuf {
-						// クリップ防止
-						if sample > 1.0 {
-							sample = 1.0
-						}
-						if sample < -1.0 {
-							sample = -1.0
-						}
-						// 16bit PCM 変換
-						val := int16(sample * 32767.0)
-						binary.Write(h.captureBuffer, binary.LittleEndian, val)
-					}
+					binary.Write(h.captureBuffer, binary.LittleEndian, audioBuf)
 
 					// 目標サンプル数に達したかチェック
 					if h.timeInfo.SamplePos >= h.captureEndSample {
 						log.Printf("[Host] Capture finished at SamplePos: %.0f", h.timeInfo.SamplePos)
 						h.isCapturing = false
+						// 自動停止：再生も同時に止める
+						h.playing = false
+						h.timeInfo.Flags &^= vst2.TransportPlaying
 						wavData := h.finalizeCapture()
 						go func(c chan []byte, d []byte) { c <- d }(h.captureReply, wavData)
 					}
 				}
 
 				// --- ファイル保存 (output.wav用) ---
-				if h.is_fileOut {
-					binary.Write(h.wavFile, binary.LittleEndian, audioBuf)
-					h.wavDataSize += uint32(len(audioBuf) * 4)
+				if h.is_fileOut && h.timeInfo.SamplePos >= 160000 {
+					// 上記ループで書き込んだバイト数は len(audioBuf) * 2 (float32 -> int16)
+					h.wavDataSize += uint32(len(audioBuf) * 2)
 				}
 				h.timeInfo.SamplePos += float64(h.bufferSize)
 			}
@@ -513,12 +505,13 @@ func (h *VstHost) writeWavHeader(sz uint32) {
 	binary.Write(h.wavFile, binary.LittleEndian, uint32(sz+36))
 	binary.Write(h.wavFile, binary.LittleEndian, []byte("WAVEfmt "))
 	binary.Write(h.wavFile, binary.LittleEndian, uint32(16))
+	// IEEE Float format: 32bit stereo (format 3)
 	binary.Write(h.wavFile, binary.LittleEndian, uint16(3))
 	binary.Write(h.wavFile, binary.LittleEndian, uint16(2))
 	binary.Write(h.wavFile, binary.LittleEndian, uint32(48000))
-	binary.Write(h.wavFile, binary.LittleEndian, uint32(48000*8))
-	binary.Write(h.wavFile, binary.LittleEndian, uint16(8))
-	binary.Write(h.wavFile, binary.LittleEndian, uint16(32))
+	binary.Write(h.wavFile, binary.LittleEndian, uint32(48000*8)) // ByteRate = SampleRate * NumChannels * BitsPerSample/8
+	binary.Write(h.wavFile, binary.LittleEndian, uint16(2*4))     // BlockAlign = NumChannels * BitsPerSample/8
+	binary.Write(h.wavFile, binary.LittleEndian, uint16(32))      // BitsPerSample
 	binary.Write(h.wavFile, binary.LittleEndian, []byte("data"))
 	binary.Write(h.wavFile, binary.LittleEndian, sz)
 }
@@ -537,7 +530,9 @@ func (h *VstHost) loadPlugin(path string, hwndStr string) {
 	v, _ := vst2.Open(path)
 	h.vst = v
 	plugin := v.Plugin(func(op vst2.HostOpcode, index int32, value int64, ptr unsafe.Pointer, opt float32) int64 {
-		println("[hostcallback] opcode ", op, index, value)
+		if op != 7 {
+			println("[hostcallback] opcode ", op, index, value)
+		}
 		switch op {
 		case vst2.HostVersion:
 			return 2400

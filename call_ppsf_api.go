@@ -16,7 +16,7 @@ import (
 )
 
 // GeneratePPSFFilename: 入力の先頭20字(クリーンアップ後) + 日時秒.bin を生成します
-func GeneratePPSFFilename(text string) string {
+func GenerateFilename(text string) string {
 	// ファイル名に使えない文字や空白を除去
 	clean := strings.Map(func(r rune) rune {
 		if unicode.IsSpace(r) || strings.ContainsRune(`\/:*?"<>|`, r) {
@@ -35,7 +35,7 @@ func GeneratePPSFFilename(text string) string {
 	}
 
 	//timestamp := time.Now().Format("20060102_150405")
-	return fmt.Sprintf("%s.bin", prefix) //, timestamp)
+	return prefix //, timestamp)
 }
 
 // RequestPPSFGeneration sends notes to the PPSF generator API and saves the resulting bin file.
@@ -88,6 +88,17 @@ var htsToVocaloid = map[string]string{
 	"j": "dZ", // HTSの j は「じゃ」行
 	"h": "h", "f": "p\\", "b": "b", "p": "p", "m": "m",
 	"k": "k", "g": "g", "r": "4",
+	// 拗音化・口蓋化子音（アポストロフィ付き）の対応表
+	"k'": "k'",
+	"g'": "g'",
+	"t'": "t'",
+	"d'": "d'",
+	"n'": "J",
+	"h'": "C",
+	"b'": "b'",
+	"p'": "p'",
+	"m'": "m'",
+	"r'": "4'",
 }
 
 // ConvertToNotesCombined: 形態素(歌詞用)とラベル(音素・アクセント用)を組み合わせてノートを生成します
@@ -156,11 +167,47 @@ func ConvertToNotesCombined(morphemes []libopj.Morpheme, labels []libopj.Label, 
 			duration = durSokuon
 		} else {
 			var translated []string
+			// i または I を含むモーラで、その手前の子音を口蓋化（拗音化）させる
+			hasI := false
 			for _, p := range currentPhonemes {
-				if v, ok := htsToVocaloid[p]; ok {
+				if p == "i" || p == "I" {
+					hasI = true
+					break
+				}
+			}
+
+			for idx, p := range currentPhonemes {
+				// 次の音素があり、そのモーラが i/I を含んでいる場合の特別変換
+				translatedPh := p
+				if hasI && idx < len(currentPhonemes)-1 {
+					switch p {
+					case "k":
+						translatedPh = "k'"
+					case "g":
+						translatedPh = "g'"
+					case "t":
+						translatedPh = "t'"
+					case "d":
+						translatedPh = "d'"
+					case "n":
+						translatedPh = "J"
+					case "h":
+						translatedPh = "C"
+					case "b":
+						translatedPh = "b'"
+					case "p":
+						translatedPh = "p'"
+					case "m":
+						translatedPh = "m'"
+					case "r":
+						translatedPh = "4'"
+					}
+				}
+
+				if v, ok := htsToVocaloid[translatedPh]; ok {
 					translated = append(translated, v)
 				} else {
-					translated = append(translated, p)
+					translated = append(translated, translatedPh)
 				}
 			}
 			ph = strings.Join(translated, " ")

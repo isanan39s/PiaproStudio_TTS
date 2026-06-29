@@ -49,26 +49,50 @@ func (api *APIserver) entry(w http.ResponseWriter, r *http.Request) {
 	// WAV返却が必要なコマンドの判定
 	if cmd == "getwav" {
 		reply := make(chan []byte, 1)
-		msg := MsgBus{
-			Cmd:       cmd,
-			To:        "txt2ppsf",
-			From:      "api",
-			Option:    options,
-			ReplyChan: reply,
-		}
-		api.bus.sendMsg(msg)
+		api.bus.sendMsg(MsgBus{
+			Cmd:    "genppsf",
+			To:     "txt2ppsf",
+			From:   "api",
+			Option: options,
+		})
+		done := make(chan struct{})
+		go func() {
+			msg := MsgBus{
+				Cmd:       cmd,
+				To:        "txt2ppsf",
+				From:      "api",
+				ReplyChan: reply,
+			}
+			api.bus.sendMsg(msg)
 
-		// レンダリング結果を待機
-		select {
-		case wavData := <-reply:
-			w.Header().Set("Content-Type", "audio/wav")
-			w.Header().Set("Content-Disposition", "attachment; filename=\"miku_voice.wav\"")
-			w.Write(wavData)
-			return
-		case <-time.After(30 * time.Second): // リアルタイム再生を待つため少し長めに設定
-			http.Error(w, "Capture timeout", http.StatusRequestTimeout)
-			return
-		}
+			// レンダリング結果を待機
+			select {
+			case wavData := <-reply:
+				w.Header().Set("Content-Type", "audio/wav")
+				w.Header().Set("Content-Disposition", "attachment; filename=\""+GenerateFilename(options[0])+".wav\"")
+				w.Write(wavData)
+				return
+			case <-time.After(30 * time.Second): // リアルタイム再生を待つため少し長めに設定
+				http.Error(w, "Capture timeout", http.StatusRequestTimeout)
+				return
+			}
+			done <- struct{}{}
+		}()
+		<-done
+
+	}
+
+	if cmd == "say" {
+		api.bus.sendMsg(MsgBus{
+			Cmd:    "genppsf",
+			To:     "txt2ppsf",
+			From:   "api",
+			Option: options,
+		})
+		api.bus.sendMsg(MsgBus{
+			Cmd:  "say",
+			To:   "txt2ppsf",
+			From: "api"})
 	}
 
 	// 通常のコマンド（非同期：say, stop等）
