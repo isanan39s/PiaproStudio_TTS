@@ -133,7 +133,7 @@ func opjt_main(bus *BusHQdat, dicpath string) {
 				bus.sendMsg(MsgBus{Cmd: "play", To: "vst_host"})
 
 				// 音符の長さに合わせて自動停止 (180 BPM, 480 TPQN -> 1 tick = 0.6944 ms)
-				playDur := time.Duration(float64(currentlen)*0.6944) * time.Millisecond
+				playDur := time.Duration(float64(currentlen)*0.6944*1.7) * time.Millisecond
 				time.Sleep(playDur + 500*time.Millisecond) // 余韻500ms
 				bus.sendMsg(MsgBus{Cmd: "stop", To: "vst_host", From: "txt2ppsf"})
 			}()

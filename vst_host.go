@@ -178,6 +178,7 @@ func (h *VstHost) loop() {
 			// 開始時刻(1920)と終了時刻(endTick)をサンプルに変換
 			startPos := h.ppqToSample(0)
 			endPos := h.ppqToSample(float64(endTick) / 480.0)
+			endPos*=1.5
 			// 余裕サンプルを追加し、指定 Tick まで確実にキャプチャ
 			marginSamples := h.sampleRate // 1 秒分の余裕
 			h.captureEndSample = endPos + marginSamples
