@@ -1,8 +1,12 @@
-*.exe
+*.exe*
 *.dmp
 *.out
 *.bin
+*pdf
+
 desktop.ini
+*wav
+- output.wav
 
 test/dump_fxb/
 リリース/

@@ -167,10 +167,10 @@ func ConvertToNotesCombined(morphemes []libopj.Morpheme, labels []libopj.Label, 
 			duration = durSokuon
 		} else {
 			var translated []string
-			// i または I を含むモーラで、その手前の子音を口蓋化（拗音化）させる
+			// i/I または y/j を含むモーラで、その手前の子音を口蓋化（拗音化）させる
 			hasI := false
 			for _, p := range currentPhonemes {
-				if p == "i" || p == "I" {
+				if p == "i" || p == "I" || p == "y" || p == "j" {
 					hasI = true
 					break
 				}

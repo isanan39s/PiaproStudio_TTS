@@ -49,37 +49,32 @@ func (api *APIserver) entry(w http.ResponseWriter, r *http.Request) {
 	// WAV返却が必要なコマンドの判定
 	if cmd == "getwav" {
 		reply := make(chan []byte, 1)
-		api.bus.sendMsg(MsgBus{
+				api.bus.sendMsg(MsgBus{
 			Cmd:    "genppsf",
 			To:     "txt2ppsf",
 			From:   "api",
 			Option: options,
 		})
-		done := make(chan struct{})
-		go func() {
-			msg := MsgBus{
-				Cmd:       cmd,
-				To:        "txt2ppsf",
-				From:      "api",
-				ReplyChan: reply,
-			}
-			api.bus.sendMsg(msg)
-
-			// レンダリング結果を待機
-			select {
-			case wavData := <-reply:
-				w.Header().Set("Content-Type", "audio/wav")
-				w.Header().Set("Content-Disposition", "attachment; filename=\""+GenerateFilename(options[0])+".wav\"")
-				w.Write(wavData)
-				return
-			case <-time.After(30 * time.Second): // リアルタイム再生を待つため少し長めに設定
-				http.Error(w, "Capture timeout", http.StatusRequestTimeout)
-				return
-			}
-			done <- struct{}{}
-		}()
-		<-done
-
+		// 直接 getwav コマンドを txt2ppsf に送信し、ReplyChan で結果を受け取る
+		msg := MsgBus{
+			Cmd:       cmd,
+			To:        "txt2ppsf",
+			From:      "api",
+			Option:    options,
+			ReplyChan: reply,
+		}
+		// 直接 getwav コマンドを txt2ppsf に送信し、ReplyChan で結果を待つ
+		api.bus.sendMsg(msg)
+		select {
+		case wavData := <-reply:
+			w.Header().Set("Content-Type", "audio/wav")
+			w.Header().Set("Content-Disposition", "attachment; filename=\""+GenerateFilename(options[0])+".wav\"")
+			w.Write(wavData)
+			return
+		case <-time.After(30 * time.Second):
+			http.Error(w, "Capture timeout", http.StatusRequestTimeout)
+			return
+		}
 	}
 
 	if cmd == "say" {

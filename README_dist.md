@@ -56,6 +56,7 @@ PiaproStudio_TTS/
 起動中、ブラウザや `curl` 等で `http://localhost:8080/` にアクセスすることで制御できます。
 
 #### 1. 音声生成 ＆ WAVデータダウンロード
+### *壊れています!!! 今後修正されるかも*
 * **リクエスト**: `GET` または `POST`
 * **エンドポイント例 (GET)**:
   `http://localhost:8080/?cmd=getwav&text=こんにちは`
